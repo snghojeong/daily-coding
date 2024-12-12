@@ -1,58 +1,93 @@
 import socket
 from functools import reduce
+from typing import List, Optional, Callable
 
-# Step 1: Define a function to square a number
-def square(x):
+
+# Step 1: Define reusable functional programming utilities
+def square(x: int) -> int:
+    """Square a number."""
     return x * x
 
-# Step 2: Define a function to filter even numbers
-def is_even(x):
+
+def is_even(x: int) -> bool:
+    """Check if a number is even."""
     return x % 2 == 0
 
-# Step 3: Define a function to sum two numbers
-def add(x, y):
+
+def add(x: int, y: int) -> int:
+    """Sum two numbers."""
     return x + y
 
-# Step 4: Read numbers from a file and process them
-def process_numbers_from_file(file_path):
+
+# Step 2: File reading utility
+def read_numbers_from_file(file_path: str) -> List[int]:
+    """Read integers from a file."""
     try:
-        # Read numbers from the file
         with open(file_path, 'r') as file:
-            numbers = [int(line.strip()) for line in file.readlines()]
-
-        # Apply functional programming concepts
-        squared_numbers = map(square, numbers)  # Map: Apply the `square` function to each number
-        even_numbers = filter(is_even, squared_numbers)  # Filter: Keep only the even numbers
-        total_sum = reduce(add, even_numbers, 0)  # Reduce: Compute the sum of the remaining numbers
-
-        return total_sum
+            return [int(line.strip()) for line in file.readlines()]
     except FileNotFoundError:
-        print(f"Error: File not found at {file_path}")
-        return None
+        raise FileNotFoundError(f"File not found: {file_path}")
     except ValueError:
-        print("Error: File contains non-numeric data.")
-        return None
+        raise ValueError("File contains invalid data. Ensure all lines are integers.")
 
-# Step 5: Send the result via TCP
-def send_result_via_tcp(result, host, port):
+
+# Step 3: Data processing utility
+def process_numbers(numbers: List[int], 
+                    mapper: Callable[[int], int], 
+                    filterer: Callable[[int], bool], 
+                    reducer: Callable[[int, int], int], 
+                    initial: int = 0) -> int:
+    """
+    Process numbers using map, filter, and reduce.
+
+    :param numbers: List of numbers to process.
+    :param mapper: Function to transform each number.
+    :param filterer: Function to filter numbers.
+    :param reducer: Function to reduce numbers.
+    :param initial: Initial value for the reducer.
+    :return: Final reduced value.
+    """
+    mapped = map(mapper, numbers)
+    filtered = filter(filterer, mapped)
+    return reduce(reducer, filtered, initial)
+
+
+# Step 4: TCP communication utility
+def send_message_via_tcp(message: str, host: str, port: int) -> None:
+    """Send a message to a TCP server."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
             client_socket.connect((host, port))
-            message = f"Processed result: {result}"
             client_socket.sendall(message.encode('utf-8'))
-            print(f"Sent result to {host}:{port}")
-    except ConnectionError:
-        print(f"Error: Could not connect to {host}:{port}")
+            print(f"Message sent to {host}:{port}")
+    except ConnectionError as e:
+        raise ConnectionError(f"Unable to connect to {host}:{port}. {str(e)}")
 
-# File path to the text file containing numbers
-file_path = "numbers.txt"  # Replace with your file path
 
-# TCP server details
-tcp_host = "127.0.0.1"  # Replace with your server's IP
-tcp_port = 8080         # Replace with your server's port
+# Step 5: Main function with reusable components
+def main(file_path: str, tcp_host: str, tcp_port: int) -> None:
+    """Main execution function."""
+    try:
+        # Step 1: Read numbers from the file
+        numbers = read_numbers_from_file(file_path)
 
-# Process the numbers and send the result via TCP
-result = process_numbers_from_file(file_path)
-if result is not None:
-    print(f"Result: {result}")
-    send_result_via_tcp(result, tcp_host, tcp_port)
+        # Step 2: Process the numbers
+        result = process_numbers(numbers, square, is_even, add)
+
+        # Step 3: Send the result via TCP
+        send_message_via_tcp(f"Processed result: {result}", tcp_host, tcp_port)
+
+        # Step 4: Display the result
+        print(f"Result: {result}")
+
+    except Exception as e:
+        print(f"Error: {str(e)}")
+
+
+# Configurations (adjust as needed)
+if __name__ == "__main__":
+    file_path = "numbers.txt"  # Replace with your file path
+    tcp_host = "127.0.0.1"    # Replace with the server's IP
+    tcp_port = 8080           # Replace with the server's port
+
+    main(file_path, tcp_host, tcp_port)
