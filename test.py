@@ -1,9 +1,10 @@
+from rx import from_list, operators as ops
+from rx.scheduler import ThreadPoolScheduler
 import socket
-from functools import reduce
-from typing import List, Optional, Callable
+import threading
 
 
-# Step 1: Define reusable functional programming utilities
+# Step 1: Define reusable functions for data transformations
 def square(x: int) -> int:
     """Square a number."""
     return x * x
@@ -20,39 +21,19 @@ def add(x: int, y: int) -> int:
 
 
 # Step 2: File reading utility
-def read_numbers_from_file(file_path: str) -> List[int]:
-    """Read integers from a file."""
+def read_numbers_from_file(file_path: str):
+    """Read integers from a file and return an observable."""
     try:
         with open(file_path, 'r') as file:
-            return [int(line.strip()) for line in file.readlines()]
+            numbers = [int(line.strip()) for line in file.readlines()]
+        return from_list(numbers)  # Create an observable from the list
     except FileNotFoundError:
         raise FileNotFoundError(f"File not found: {file_path}")
     except ValueError:
         raise ValueError("File contains invalid data. Ensure all lines are integers.")
 
 
-# Step 3: Data processing utility
-def process_numbers(numbers: List[int], 
-                    mapper: Callable[[int], int], 
-                    filterer: Callable[[int], bool], 
-                    reducer: Callable[[int, int], int], 
-                    initial: int = 0) -> int:
-    """
-    Process numbers using map, filter, and reduce.
-
-    :param numbers: List of numbers to process.
-    :param mapper: Function to transform each number.
-    :param filterer: Function to filter numbers.
-    :param reducer: Function to reduce numbers.
-    :param initial: Initial value for the reducer.
-    :return: Final reduced value.
-    """
-    mapped = map(mapper, numbers)
-    filtered = filter(filterer, mapped)
-    return reduce(reducer, filtered, initial)
-
-
-# Step 4: TCP communication utility
+# Step 3: TCP communication utility
 def send_message_via_tcp(message: str, host: str, port: int) -> None:
     """Send a message to a TCP server."""
     try:
@@ -64,22 +45,26 @@ def send_message_via_tcp(message: str, host: str, port: int) -> None:
         raise ConnectionError(f"Unable to connect to {host}:{port}. {str(e)}")
 
 
-# Step 5: Main function with reusable components
-def main(file_path: str, tcp_host: str, tcp_port: int) -> None:
-    """Main execution function."""
+# Step 4: Main reactive processing function
+def reactive_process(file_path: str, tcp_host: str, tcp_port: int):
+    """Process the numbers from a file reactively and send results over TCP."""
+    # Use a thread pool scheduler for asynchronous operations
+    thread_scheduler = ThreadPoolScheduler(threading.active_count())
+
     try:
-        # Step 1: Read numbers from the file
-        numbers = read_numbers_from_file(file_path)
-
-        # Step 2: Process the numbers
-        result = process_numbers(numbers, square, is_even, add)
-
-        # Step 3: Send the result via TCP
-        send_message_via_tcp(f"Processed result: {result}", tcp_host, tcp_port)
-
-        # Step 4: Display the result
-        print(f"Result: {result}")
-
+        # Reactive pipeline
+        read_numbers_from_file(file_path).pipe(
+            ops.map(square),                # Map: Apply square transformation
+            ops.filter(is_even),            # Filter: Keep even numbers
+            ops.reduce(add, seed=0)         # Reduce: Sum up the numbers
+        ).subscribe(
+            on_next=lambda result: (
+                send_message_via_tcp(f"Processed result: {result}", tcp_host, tcp_port),
+                print(f"Result: {result}")
+            ),
+            on_error=lambda e: print(f"Error: {str(e)}"),
+            scheduler=thread_scheduler
+        )
     except Exception as e:
         print(f"Error: {str(e)}")
 
@@ -90,4 +75,4 @@ if __name__ == "__main__":
     tcp_host = "127.0.0.1"    # Replace with the server's IP
     tcp_port = 8080           # Replace with the server's port
 
-    main(file_path, tcp_host, tcp_port)
+    reactive_process(file_path, tcp_host, tcp_port)
