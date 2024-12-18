@@ -20,17 +20,14 @@ from rx.scheduler import ThreadPoolScheduler
 import threading
 
 
-# Pure function to square a number
 def square(x: int) -> int:
     return x * x
 
 
-# Pure function to check if a number is even
 def is_even(x: int) -> bool:
     return x % 2 == 0
 
 
-# Pure function to sum two numbers
 def add(x: int, y: int) -> int:
     return x + y
 
