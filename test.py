@@ -64,5 +64,5 @@ def reactive_pipeline(file_path: str):
 
 # Configurations
 if __name__ == "__main__":
-    file_path = "numbers.txt"  # Replace with your file path
+    file_path = "numbers.txt"
     reactive_pipeline(file_path)
