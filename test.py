@@ -1,18 +1,18 @@
 """
-Reactive Functional Programming: CLI-Based File Processing
+Reactive Functional Programming: CLI-Based File Processing (Odd Numbers)
 
 This script demonstrates reactive functional programming to process numbers from a file.
 Steps:
 1. Reads numbers from a file as a stream of events.
 2. Applies functional transformations:
    - Squares each number (`map`).
-   - Filters even numbers (`filter`).
+   - Filters odd numbers (`filter`).
    - Sums the results (`reduce`).
 3. Outputs the final sum to the CLI.
 
 Features:
 - Reactive pipeline with RxPy.
-- Pure functions for transformations (`square`, `is_even`, `add`).
+- Pure functions for transformations (`square`, `is_odd`, `add`).
 - Error handling for missing files or invalid data.
 """
 
@@ -28,11 +28,11 @@ def square(x: int) -> int:
     return x * x
 
 
-# Pure function to check if a number is even
+# Pure function to check if a number is odd
 # Input: Integer
-# Output: Boolean (True if even, False otherwise)
-def is_even(x: int) -> bool:
-    return x % 2 == 0
+# Output: Boolean (True if odd, False otherwise)
+def is_odd(x: int) -> bool:
+    return x % 2 != 0
 
 
 # Pure function to sum two numbers
@@ -72,7 +72,7 @@ def reactive_pipeline(file_path: str):
     # Create the reactive pipeline
     file_observable(file_path).pipe(
         ops.map(square),          # Square each number
-        ops.filter(is_even),      # Filter even numbers
+        ops.filter(is_odd),       # Filter odd numbers
         ops.reduce(add, seed=0)   # Sum the remaining numbers, starting from 0
     ).subscribe(
         on_next=lambda result: print(f"Final Result: {result}"),  # Print the final sum
