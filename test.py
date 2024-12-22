@@ -1,5 +1,5 @@
 """
-Reactive Functional Programming: CLI-Based File Processing (Odd Numbers)
+Reactive Functional Programming: CLI-Based File Processing
 
 This script demonstrates reactive functional programming to process numbers from a file.
 Steps:
