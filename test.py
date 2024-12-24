@@ -72,8 +72,6 @@ def reactive_pipeline(file_path: str):
         scheduler=thread_scheduler                              # Use thread-based scheduling
     )
 
-
-# Configurations
 if __name__ == "__main__":
     file_path = "numbers.txt"  # Replace with your file path
     reactive_pipeline(file_path)
