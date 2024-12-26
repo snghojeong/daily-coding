@@ -10,10 +10,6 @@ Steps:
    - Sums the results (`reduce`).
 3. Outputs the final sum to the CLI.
 
-Features:
-- Reactive pipeline with RxPy.
-- Pure functions for transformations (`square`, `is_prime`, `add`).
-- Error handling for missing files or invalid data.
 """
 
 from rx import create, operators as ops
