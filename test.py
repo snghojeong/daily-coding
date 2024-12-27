@@ -40,6 +40,9 @@ def add(x: int, y: int) -> int:
 def sub(x: int, y: int) -> int:
     return x - y
 
+def mul(x: int, y: int) -> int:
+    return x * y
+
 # Creates an observable stream from a file
 def file_observable(file_path: str):
     def emitter(observer, _):
