@@ -37,6 +37,7 @@ def is_prime(x: int) -> bool:
 def add(x: int, y: int) -> int:
     return x + y
 
+# Pure function to subtract y from x
 def sub(x: int, y: int) -> int:
     return x - y
 
