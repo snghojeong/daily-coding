@@ -18,11 +18,6 @@ import threading
 import math
 
 
-# Pure function to square a number
-def square(x: int) -> int:
-    return x * x
-
-
 # Pure function to check if a number is prime
 def is_prime(x: int) -> bool:
     if x < 2:
@@ -32,6 +27,9 @@ def is_prime(x: int) -> bool:
             return False
     return True
 
+# Pure function to square a number
+def square(x: int) -> int:
+    return x * x
 
 # Pure function to sum two numbers
 def add(x: int, y: int) -> int:
