@@ -1,5 +1,5 @@
 """
-Reactive Functional Programming: CLI-Based File Processing (Prime Numbers)
+Reactive Functional Programming
 
 This script demonstrates reactive functional programming to process numbers from a file.
 Steps:
