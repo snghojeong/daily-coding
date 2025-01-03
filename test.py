@@ -1,22 +1,10 @@
-"""
-Reactive Functional Programming
-
-This script demonstrates reactive functional programming to process numbers from a file.
-Steps:
-1. Reads numbers from a file as a stream of events.
-2. Applies functional transformations:
-   - Squares each number (`map`).
-   - Filters prime numbers (`filter`).
-   - Sums the results (`reduce`).
-3. Outputs the final sum to the CLI.
-
-"""
-
 from rx import create, operators as ops
 from rx.scheduler import ThreadPoolScheduler
 import threading
 import math
 
+# Create a thread pool scheduler
+thread_pool_scheduler = ThreadPoolScheduler(threading.active_count())
 
 # Pure function to check if a number is prime
 def is_prime(x: int) -> bool:
@@ -35,46 +23,34 @@ def square(x: int) -> int:
 def add(x: int, y: int) -> int:
     return x + y
 
-# Pure function to subtract y from x
-def sub(x: int, y: int) -> int:
-    return x - y
-
-def mul(x: int, y: int) -> int:
-    return x * y
-
-def div(x: int, y: int) -> int:
-    return x / y
-
 # Creates an observable stream from a file
-def file_observable(file_path: str):
+def create_number_observable(file_path: str) -> rx.Observable:
     def emitter(observer, _):
         try:
             with open(file_path, 'r') as file:
                 for line in file:
-                    observer.on_next(int(line.strip()))  # Emit each number
-            observer.on_completed()  # Signal the stream is complete
-        except FileNotFoundError:
-            observer.on_error(FileNotFoundError(f"File not found: {file_path}"))
+                    observer.on_next(int(line.strip()))
+            observer.on_completed()
+        except (IOError, OSError) as e:
+            observer.on_error(e)
         except ValueError:
             observer.on_error(ValueError("Invalid data in file."))
     return create(emitter)
 
-
-# Sets up a reactive pipeline to process numbers and print results
-def reactive_pipeline(file_path: str):
-    thread_scheduler = ThreadPoolScheduler(threading.active_count())
-
-    file_observable(file_path).pipe(
-        ops.map(square),          # Square each number
-        ops.filter(is_prime),     # Filter prime numbers
-        ops.reduce(add, seed=0)   # Sum the remaining numbers, starting from 0
+# Defines the processing pipeline for the number stream
+def process_numbers(source: rx.Observable) -> rx.Disposable:
+    return source.pipe(
+        ops.map(square),
+        ops.filter(is_prime),
+        ops.reduce(add, seed=0)
     ).subscribe(
-        on_next=lambda result: print(f"Final Result: {result}"),  # Print the final sum
-        on_error=lambda e: print(f"Error: {e}"),                 # Handle errors
-        on_completed=lambda: print("Processing complete."),      # Signal completion
-        scheduler=thread_scheduler                              # Use thread-based scheduling
+        on_next=lambda result: print(f"Final Result: {result}"),
+        on_error=lambda e: print(f"Error: {e}"),
+        on_completed=lambda: print("Processing complete."),
+        scheduler=thread_pool_scheduler
     )
 
 if __name__ == "__main__":
     file_path = "numbers.txt"  # Replace with your file path
-    reactive_pipeline(file_path)
+    number_observable = create_number_observable(file_path)
+    process_numbers(number_observable)
