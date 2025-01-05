@@ -3,7 +3,7 @@ from rx.scheduler import ThreadPoolScheduler
 from rx.disposable import Disposable
 import threading
 import math
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Iterator
 
 # Create a thread pool scheduler
 thread_pool_scheduler = ThreadPoolScheduler(threading.active_count())
@@ -17,53 +17,43 @@ def is_prime(x: int) -> bool:
             return False
     return True
 
-def create_number_observable(file_path: str) -> rx.Observable:
-    """Creates an observable stream from a file."""
-    def emitter(observer, _):
-        try:
-            with open(file_path, 'r') as file:
-                for line in file:
-                    try:
-                        observer.on_next(int(line.strip()))
-                    except ValueError:
-                        observer.on_error(ValueError(f"Invalid number in line: {line}"))
-            observer.on_completed()
-        except (IOError, OSError) as e:
-            observer.on_error(e)
-    return create(emitter)
+def read_numbers_from_file(file_path: str) -> Iterator[int]:
+    """Reads numbers from a file and yields them."""
+    with open(file_path, 'r') as file:
+        for line in file:
+            try:
+                yield int(line.strip())
+            except ValueError:
+                # Log the invalid line instead of raising an error
+                print(f"Warning: Invalid number in line: {line}")
 
 def process_numbers(
-    source: rx.Observable,
-    transformations: Iterable[Callable[[int], int]] = (square,),
+    source: Iterable[int],
+    transformations: Iterable[Callable[[int], int]] = (lambda x: x * x,),  # Square by default
     filter_predicate: Callable[[int], bool] = is_prime,
-    aggregation_function: Callable[[int, int], int] = add,
-    initial_value: int = 0,
-) -> rx.Disposable:
+    aggregation_function: Callable[[int, int], int] = sum,  # Use built-in sum
+) -> int:
     """
     Processes a stream of numbers with the specified transformations, filtering, and aggregation.
 
     Args:
-        source: The source observable stream of numbers.
+        source: An iterable of numbers.
         transformations: An iterable of functions to apply to each number.
         filter_predicate: A function to filter numbers.
         aggregation_function: A function to aggregate the filtered numbers.
-        initial_value: The initial value for the aggregation.
 
     Returns:
-        A disposable object representing the subscription.
+        The aggregated result.
     """
-    return source.pipe(
-        ops.map(lambda x: reduce(lambda acc, f: f(acc), transformations, x)),
-        ops.filter(filter_predicate),
-        ops.reduce(aggregation_function, initial_value)
-    ).subscribe(
-        on_next=lambda result: print(f"Final Result: {result}"),
-        on_error=lambda e: print(f"Error: {e}"),
-        on_completed=lambda: print("Processing complete."),
-        scheduler=thread_pool_scheduler
+    return sum(
+        num
+        for num in map(
+            lambda x: reduce(lambda acc, f: f(acc), transformations, x), source
+        )
+        if filter_predicate(num)
     )
 
 if __name__ == "__main__":
     file_path = "numbers.txt"
-    number_observable = create_number_observable(file_path)
-    process_numbers(number_observable)
+    result = process_numbers(read_numbers_from_file(file_path))
+    print(f"Final Result: {result}") 
