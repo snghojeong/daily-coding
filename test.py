@@ -1,6 +1,6 @@
 from functools import reduce
 from math import sqrt
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Generator
 
 def is_prime(number: int) -> bool:
     """Checks if a number is prime."""
@@ -11,7 +11,7 @@ def is_prime(number: int) -> bool:
             return False
     return True
 
-def read_numbers_from_file(file_path: str) -> Iterable[int]:
+def read_numbers_from_file(file_path: str) -> Generator[int, None, None]:
     """Reads numbers from a file and yields them."""
     with open(file_path, 'r') as file:
         for line in file:
@@ -20,31 +20,31 @@ def read_numbers_from_file(file_path: str) -> Iterable[int]:
             except ValueError:
                 print(f"Warning: Invalid number in line: {line}")
 
-def process_numbers(
-    numbers: Iterable[int],
-    transformations: Iterable[Callable[[int], int]] = (lambda x: x * x,),  # Square by default
-    filter_predicate: Callable[[int], bool] = is_prime,
-) -> int:
+def process_data(
+    data: Iterable,
+    transformations: Iterable[Callable] = (lambda x: x * x,),  # Square by default
+    filter_predicate: Callable[[any], bool] = is_prime,
+) -> Iterable:
     """
-    Processes a stream of numbers with the specified transformations and filtering.
+    Processes an iterable of data with the specified transformations and filtering.
 
     Args:
-        numbers: An iterable of numbers.
-        transformations: An iterable of functions to apply to each number.
-        filter_predicate: A function to filter numbers.
+        data: An iterable of data.
+        transformations: An iterable of functions to apply to each data element.
+        filter_predicate: A function to filter data elements.
 
     Returns:
-        The sum of the processed numbers.
+        An iterable of processed data.
     """
-    return sum(
-        num
-        for num in map(
-            lambda x: reduce(lambda acc, f: f(acc), transformations, x), numbers
-        )
-        if filter_predicate(num)
+    return filter(
+        filter_predicate,
+        map(
+            lambda x: reduce(lambda acc, f: f(acc), transformations, x),
+            data,
+        ),
     )
 
 if __name__ == "__main__":
     file_path = "numbers.txt"
-    result = process_numbers(read_numbers_from_file(file_path))
+    result = sum(process_data(read_numbers_from_file(file_path)))
     print(f"Final Result: {result}")
