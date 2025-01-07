@@ -44,7 +44,19 @@ def process_data(
         ),
     )
 
+def sum_primes(file_path: str) -> int:
+    """
+    Reads numbers from a file, applies transformations, filters primes, and sums the results.
+
+    Args:
+        file_path: Path to the file containing numbers.
+
+    Returns:
+        The sum of prime numbers after transformations.
+    """
+    return sum(process_data(read_numbers_from_file(file_path)))
+
 if __name__ == "__main__":
     file_path = "numbers.txt"
-    result = sum(process_data(read_numbers_from_file(file_path)))
+    result = sum_primes(file_path)
     print(f"Final Result: {result}")
