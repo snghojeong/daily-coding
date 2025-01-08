@@ -4,9 +4,11 @@ from typing import Callable, Iterable, Generator
 
 def is_prime(number: int) -> bool:
     """Checks if a number is prime."""
-    if number < 2:
+    if number <= 1:
         return False
-    for divisor in range(2, int(sqrt(number)) + 1):
+    if number % 2 == 0 and number > 2:
+        return False
+    for divisor in range(3, int(sqrt(number)) + 1, 2): 
         if number % divisor == 0:
             return False
     return True
@@ -59,4 +61,4 @@ def sum_primes(file_path: str) -> int:
 if __name__ == "__main__":
     file_path = "numbers.txt"
     result = sum_primes(file_path)
-    print(f"Final Result: {result}")
+    print(f"Final Result: {result}") 
