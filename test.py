@@ -1,6 +1,7 @@
 from functools import reduce
 from math import sqrt
 from typing import Callable, Iterable, Generator
+import sys
 
 def is_prime(number: int) -> bool:
     """Checks if a number is prime."""
@@ -59,6 +60,10 @@ def sum_primes(file_path: str) -> int:
     return sum(process_data(read_numbers_from_file(file_path)))
 
 if __name__ == "__main__":
-    file_path = "numbers.txt"
+    if len(sys.argv) < 2:
+        print("Usage: python script_name.py <file_path>")
+        sys.exit(1)
+
+    file_path = sys.argv[1]
     result = sum_primes(file_path)
-    print(f"Final Result: {result}") 
+    print(f"Final Result: {result}")
