@@ -4,7 +4,6 @@ from typing import Callable, Iterable, Generator
 import sys
 
 def is_prime(number: int) -> bool:
-    """Checks if a number is prime."""
     if number <= 1:
         return False
     if number % 2 == 0 and number > 2:
