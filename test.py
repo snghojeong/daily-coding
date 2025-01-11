@@ -14,7 +14,6 @@ def is_prime(number: int) -> bool:
     return True
 
 def read_numbers_from_file(file_path: str) -> Generator[int, None, None]:
-    """Reads numbers from a file and yields them."""
     with open(file_path, 'r') as file:
         for line in file:
             try:
