@@ -26,17 +26,6 @@ def process_data(
     transformations: Iterable[Callable] = (lambda x: x * x,),  # Square by default
     filter_predicate: Callable[[any], bool] = is_prime,
 ) -> Iterable:
-    """
-    Processes an iterable of data with the specified transformations and filtering.
-
-    Args:
-        data: An iterable of data.
-        transformations: An iterable of functions to apply to each data element.
-        filter_predicate: A function to filter data elements.
-
-    Returns:
-        An iterable of processed data.
-    """
     return filter(
         filter_predicate,
         map(
