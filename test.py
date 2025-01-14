@@ -1,7 +1,6 @@
 from functools import reduce
 from math import sqrt
 from typing import Callable, Iterable, Generator
-import argparse
 
 def is_prime(number: int) -> bool:
     """Checks if a number is prime."""
@@ -14,14 +13,29 @@ def is_prime(number: int) -> bool:
             return False
     return True
 
-def read_numbers_from_file(file_path: str) -> Generator[int, None, None]:
-    """Reads numbers from a file and yields them."""
-    with open(file_path, 'r') as file:
-        for line in file:
+def read_data(source: str) -> Generator[int, None, None]:
+    """Reads data from the specified source.
+
+    Args:
+        source: The source of the data. Can be a file path or a string containing numbers.
+
+    Returns:
+        A generator yielding the extracted integers.
+    """
+    if source.startswith("file://"):
+        file_path = source[7:]  # Remove "file://" prefix
+        with open(file_path, 'r') as file:
+            for line in file:
+                try:
+                    yield int(line.strip())
+                except ValueError:
+                    print(f"Warning: Invalid number in line: {line}")
+    else:
+        for number in source.split(','):
             try:
-                yield int(line.strip())
+                yield int(number)
             except ValueError:
-                print(f"Warning: Invalid number in line: {line}")
+                print(f"Warning: Invalid number: {number}")
 
 def process_data(
     data: Iterable,
@@ -47,22 +61,12 @@ def process_data(
         ),
     )
 
-def sum_primes(file_path: str) -> int:
-    """
-    Reads numbers from a file, applies transformations, filters primes, and sums the results.
-
-    Args:
-        file_path: Path to the file containing numbers.
-
-    Returns:
-        The sum of prime numbers after transformations.
-    """
-    return sum(process_data(read_numbers_from_file(file_path)))
+def main():
+    """Main function to process data and print the results."""
+    # Example usage:
+    data_source = "file:///path/to/numbers.txt"  # Or "1,2,3,4,5" 
+    result = sum(process_data(read_data(data_source)))
+    print(f"Final Result: {result}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Sum prime numbers from a file.")
-    parser.add_argument("file_path", help="Path to the input file")
-    args = parser.parse_args()
-
-    result = sum_primes(args.file_path)
-    print(f"Final Result: {result}")
+    main()
