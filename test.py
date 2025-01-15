@@ -14,14 +14,6 @@ def is_prime(number: int) -> bool:
     return True
 
 def read_data(source: str) -> Generator[int, None, None]:
-    """Reads data from the specified source.
-
-    Args:
-        source: The source of the data. Can be a file path or a string containing numbers.
-
-    Returns:
-        A generator yielding the extracted integers.
-    """
     if source.startswith("file://"):
         file_path = source[7:]  # Remove "file://" prefix
         with open(file_path, 'r') as file:
