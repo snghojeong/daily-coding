@@ -1,6 +1,7 @@
 from functools import reduce
 from math import sqrt
 from typing import Callable, Iterable, Generator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def is_prime(number: int) -> bool:
     """Checks if a number is prime."""
@@ -14,6 +15,14 @@ def is_prime(number: int) -> bool:
     return True
 
 def read_data(source: str) -> Generator[int, None, None]:
+    """Reads data from the specified source.
+
+    Args:
+        source: The source of the data. Can be a file path or a string containing numbers.
+
+    Returns:
+        A generator yielding the extracted integers.
+    """
     if source.startswith("file://"):
         file_path = source[7:]  # Remove "file://" prefix
         with open(file_path, 'r') as file:
@@ -53,11 +62,30 @@ def process_data(
         ),
     )
 
+def sum_primes_with_threads(data: Iterable, num_workers: int = 4) -> int:
+    """
+    Processes data in parallel using a thread pool and sums the prime numbers.
+
+    Args:
+        data: An iterable of data.
+        num_workers: The number of worker threads in the thread pool.
+
+    Returns:
+        The sum of prime numbers after processing.
+    """
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = [executor.submit(sum, process_data(chunk)) for chunk in chunks(data, num_workers)]
+        return sum(f.result() for f in as_completed(futures))
+
+def chunks(data, n):
+    """Yield successive n-sized chunks from data."""
+    for i in range(0, len(data), n):
+        yield data[i:i + n]
+
 def main():
     """Main function to process data and print the results."""
-    # Example usage:
     data_source = "file:///path/to/numbers.txt"  # Or "1,2,3,4,5" 
-    result = sum(process_data(read_data(data_source)))
+    result = sum_primes_with_threads(read_data(data_source))
     print(f"Final Result: {result}")
 
 if __name__ == "__main__":
