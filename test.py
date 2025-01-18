@@ -1,6 +1,8 @@
 from functools import reduce
 from math import sqrt
 from typing import Callable, Iterable, Generator, Protocol
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from queue import Queue
 
 class DataReader(Protocol):
     """Protocol for reading data from various sources."""
@@ -68,29 +70,53 @@ def process_data(
         ),
     )
 
-def sum_primes(data_reader: DataReader) -> int:
+def sum_primes_with_thread_pool(data_reader: DataReader, num_workers: int = 4) -> int:
     """
-    Reads data, applies transformations, filters primes, and sums the results.
+    Reads data, processes it in parallel, filters primes, and sums the results.
 
     Args:
         data_reader: An object that implements the DataReader protocol.
+        num_workers: The number of worker threads in the thread pool.
 
     Returns:
         The sum of prime numbers after transformations.
     """
-    return sum(process_data(data_reader.read()))
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        data_queue = Queue()
+        results_queue = Queue()
+
+        def worker():
+            while True:
+                try:
+                    chunk = data_queue.get_nowait()
+                except Empty:
+                    break
+                results_queue.put(sum(process_data(chunk)))
+
+        for _ in range(num_workers):
+            executor.submit(worker)
+
+        for chunk in chunks(data_reader.read(), num_workers):
+            data_queue.put(chunk)
+
+        data_queue.join() 
+
+        result = 0
+        while not results_queue.empty():
+            result += results_queue.get()
+
+        return result
+
+def chunks(data, n):
+    """Yield successive n-sized chunks from data."""
+    for i in range(0, len(data), n):
+        yield data[i:i + n]
 
 def main():
     """Main function to process data and print the results."""
-    # Example usage:
     file_data_reader = FileDataReader("file:///path/to/numbers.txt") 
-    string_data_reader = StringDataReader("1,2,3,4,5") 
-
-    result_file = sum_primes(file_data_reader)
-    result_string = sum_primes(string_data_reader)
-
-    print(f"Result from file: {result_file}")
-    print(f"Result from string: {result_string}")
+    result = sum_primes_with_thread_pool(file_data_reader)
+    print(f"Result from file: {result}")
 
 if __name__ == "__main__":
     main()
