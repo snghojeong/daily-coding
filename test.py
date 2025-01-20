@@ -5,7 +5,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 
 class DataReader(Protocol):
-    """Protocol for reading data from various sources."""
     def read(self) -> Generator[int, None, None]:
         ...
 
