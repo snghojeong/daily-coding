@@ -169,7 +169,7 @@ def main():
     """
     Main function to process data and print the results.
     """
-    file_data_reader = FileDataReader("file:///path/to/numbers.txt") 
+    file_data_reader = FileDataReader("path/to/numbers.txt") 
     result = sum_primes_with_thread_pool(file_data_reader)
     print(f"Result from file: {result}")
 
