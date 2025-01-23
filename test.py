@@ -11,12 +11,6 @@ class DataReader(Protocol):
     Defines the interface for classes that can read data and yield integers.
     """
     def read(self) -> Generator[int, None, None]:
-        """
-        Reads data from the source and yields integers.
-
-        Returns:
-            A generator that yields integers.
-        """
         ...
 
 class FileDataReader:
