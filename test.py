@@ -5,11 +5,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 
 class DataReader(Protocol):
-    """
-    Protocol for reading data from various sources. 
-    
-    Defines the interface for classes that can read data and yield integers.
-    """
     def read(self) -> Generator[int, None, None]:
         ...
 
