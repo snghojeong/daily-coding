@@ -5,13 +5,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 
 class DataReader(Protocol):
+    """Protocol for reading data from various sources."""
     def read(self) -> Generator[int, None, None]:
+        """Reads data and yields integers."""
         ...
 
 class FileDataReader:
-    """
-    Reads data from a file.
-    """
+    """Reads data from a file."""
     def __init__(self, file_path: str):
         """
         Initializes the FileDataReader with the path to the file.
@@ -94,13 +94,8 @@ def process_data(
     Returns:
         An iterable of processed data.
     """
-    return filter(
-        filter_predicate,
-        map(
-            lambda x: reduce(lambda acc, f: f(acc), transformations, x),
-            data,
-        ),
-    )
+    return filter(filter_predicate, 
+                  map(lambda x: reduce(lambda acc, f: f(acc), transformations, x), data)) 
 
 def sum_primes_with_thread_pool(data_reader: DataReader, num_workers: int = 4) -> int:
     """
@@ -158,9 +153,9 @@ def main():
     """
     Main function to process data and print the results.
     """
-    file_data_reader = FileDataReader("path/to/numbers.txt") 
+    file_data_reader = FileDataReader("file:///path/to/numbers.txt") 
     result = sum_primes_with_thread_pool(file_data_reader)
-    print(f"Result from file: {result}")
+    print(f"Final Result: {result}")
 
 if __name__ == "__main__":
     main()
