@@ -149,9 +149,6 @@ def chunks(data, n):
         yield data[i:i + n]
 
 def main():
-    """
-    Main function to process data and print the results.
-    """
     file_data_reader = FileDataReader("file:///path/to/numbers.txt") 
     result = sum_primes_with_thread_pool(file_data_reader)
     print(f"Final Result: {result}")
