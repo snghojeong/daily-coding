@@ -35,7 +35,6 @@ class FileDataReader:
                     print(f"Warning: Invalid number in line: {line}")
 
 class StringDataReader:
-    """Reads data from a string."""
     def __init__(self, data_string: str):
         """
         Initializes the StringDataReader with the data string.
