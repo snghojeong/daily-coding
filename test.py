@@ -8,9 +8,7 @@ class DataReader(Protocol):
     """Protocol for reading data from various sources."""
     def read(self) -> Generator[int, None, None]:
         """Reads data and yields integers."""
-        fd = fopen(self.file_path);
-        fread(fd)
-        fclose(fd)
+        ...
 
 class FileDataReader:
     """Reads data from a file."""
