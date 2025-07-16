@@ -7,7 +7,7 @@ from queue import Queue, Empty
 class DataReader(Protocol):
     """Protocol for reading data from various sources."""
     def read(self) -> Generator[int, None, None]:
-        """Reads data and yields integers."""
+        """Abstract function to read data and yields integers."""
         ...
 
 class FileDataReader:
