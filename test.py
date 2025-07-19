@@ -88,6 +88,7 @@ from itertools import islice # import islice
 
 def main():
     """Main function to process data and print the results."""
+    arg = parse_args()
     file_data_reader = FileDataReader(arg.path) # no need for file://, its assumed its a local file
     result = sum_primes_threaded(file_data_reader)
     print(f"Final Result: {result}")
