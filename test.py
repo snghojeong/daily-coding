@@ -3,6 +3,7 @@ from math import sqrt
 from typing import Callable, Iterable, Generator, Protocol
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue, Empty
+from itertools import islice # import islice
 
 class DataReader(Protocol):
     """Protocol for reading data from various sources."""
@@ -83,9 +84,7 @@ def sum_primes_threaded(data_reader: DataReader, num_workers: int = 4) -> int:
         for future in as_completed(futures):
             total_sum += sum(future.result())
         return total_sum
-
-from itertools import islice # import islice
-
+        
 def main():
     """Main function to process data and print the results."""
     arg = parse_args()
