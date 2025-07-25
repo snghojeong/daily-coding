@@ -70,7 +70,7 @@ def sum_primes_threaded(data_reader: DataReader, num_workers: int = 4) -> int:
 
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = []
-        chunk_size = 1000  # Adjust chunk size as needed
+        chunk_size = 1024  # Adjust chunk size as needed
 
         data_iter = data_reader.read()
 
