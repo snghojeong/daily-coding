@@ -20,7 +20,7 @@ class FileDataReader:
     def read(self) -> Generator[int, None, None]:
         """Reads integers from the file."""
         try:
-            with open(self.file_path, 'r') as file:
+            with open(self.file_path, 'rt') as file:
                 for line in file:
                     try:
                         yield int(line.strip())
