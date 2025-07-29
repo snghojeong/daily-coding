@@ -1,3 +1,4 @@
+import argparse
 from functools import reduce
 from math import sqrt
 from typing import Callable, Iterable, Generator, Protocol
