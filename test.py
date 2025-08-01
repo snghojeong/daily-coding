@@ -40,7 +40,7 @@ class StringDataReader:
 
     def read(self) -> Generator[int, None, None]:
         """Reads integers from the string."""
-        for number in self.data_string.split(','):
+        for number in self.data_string.split(';'):
             try:
                 yield int(number.strip()) #strip in case of whitespaces in the string
             except ValueError:
