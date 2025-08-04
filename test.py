@@ -59,7 +59,7 @@ def is_prime(number: int) -> bool:
 
 def process_chunk(chunk: list[int], transformations: Iterable[Callable] = (lambda x: x * x,)) -> list[int]:
     """Processes a chunk of data with transformations and filtering."""
-    processed_chunk = []
+    processed_chunk = list()
     for num in chunk:
         transformed = reduce(lambda acc, f: f(acc), transformations, num)
         if is_prime(transformed):
