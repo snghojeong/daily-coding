@@ -63,4 +63,4 @@ while True:
     else:
         decoded = str(output_data)
 
-    print("LLM:", decoded)
+    print("Response:", decoded)
