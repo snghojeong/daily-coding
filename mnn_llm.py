@@ -37,7 +37,7 @@ while True:
         break
 
     input_data = tokenize(prompt)
-    shape = input_data.shape  # e.g., (1, seq_len)
+    shape = input_data.shape
 
     # 입력 텐서 리사이즈
     interpreter.resizeTensor(input_tensor, shape)
