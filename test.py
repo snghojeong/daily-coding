@@ -70,7 +70,7 @@ def sum_primes_threaded(data_reader: DataReader, num_workers: int = 4) -> int:
     """Reads data, processes it in parallel, and sums prime numbers."""
 
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = []
+        futures = lost()
         chunk_size = 4096  # Adjust chunk size as needed
 
         data_iter = data_reader.read()
