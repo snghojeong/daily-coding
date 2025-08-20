@@ -1,251 +1,313 @@
+import argparse
 import os
+import time
+from threading import Event, Thread
+from typing import Dict, List, Optional
+
+import MNN
+import numpy as np
+from transformers import AutoTokenizer
+
+# Suppress tokenizer parallelism warning
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-import argparse
-import time
-import numpy as np
-from threading import Event, Thread
-from transformers import AutoTokenizer
-import MNN
-
-# -----------------------------
+# --------------------------------------------------------------------------
 # Utilities
-# -----------------------------
-def apply_chat_template(tokenizer, user_text: str) -> str:
-    """
-    Use Llama 3.2 chat template if available; otherwise return raw text.
-    """
+# --------------------------------------------------------------------------
+
+def apply_chat_template(tokenizer: AutoTokenizer, user_text: str) -> str:
+    """Applies the model's chat template if available, otherwise returns raw text."""
     try:
         messages = [{"role": "user", "content": user_text}]
         return tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
     except Exception:
+        print("Warning: Could not apply chat template. Using raw prompt.")
         return user_text
 
-def softmax_stable(x: np.ndarray) -> np.ndarray:
-    x = x - np.max(x)
-    e = np.exp(x, dtype=np.float64)
-    return (e / np.sum(e)).astype(np.float64)
+def softmax(x: np.ndarray) -> np.ndarray:
+    """Computes a numerically stable softmax."""
+    e_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
+    return e_x / np.sum(e_x, axis=-1, keepdims=True)
 
-def sample_from_logits(logits: np.ndarray, temperature: float = 0.0,
-                       top_p: float = 0.9, top_k: int = 0) -> int:
+def sample(logits: np.ndarray, temp: float, top_p: float, top_k: int) -> int:
     """
-    logits: (vocab,)
+    Samples a token ID from logits using temperature, top-p (nucleus), and top-k sampling.
+
+    Args:
+        logits: A 1D numpy array of raw model logits.
+        temp: The temperature for sampling. 0 means greedy.
+        top_p: The nucleus sampling probability.
+        top_k: The number of top candidates to consider.
+
+    Returns:
+        The sampled token ID as an integer.
     """
-    if temperature <= 0.0:
+    if temp == 0.0:
         return int(np.argmax(logits))
 
-    probs = softmax_stable(logits / temperature)
+    probs = softmax(logits / temp)
 
-    # top-k
-    if top_k and top_k > 0:
-        top_idx = np.argpartition(-probs, top_k)[:top_k]
+    if top_k > 0:
+        top_k_indices = np.argpartition(probs, -top_k)[-top_k:]
         mask = np.zeros_like(probs, dtype=bool)
-        mask[top_idx] = True
+        mask[top_k_indices] = True
         probs = np.where(mask, probs, 0.0)
 
-    # top-p (nucleus)
     if 0.0 < top_p < 1.0:
-        sort_idx = np.argsort(-probs)
-        sorted_probs = probs[sort_idx]
-        cumsum = np.cumsum(sorted_probs)
-        keep = cumsum <= top_p
-        # ensure at least one token kept
-        if not np.any(keep):
-            keep[0] = True
-        cutoff = np.where(keep)[0][-1]
-        mask = np.zeros_like(probs, dtype=bool)
-        mask[sort_idx[:cutoff + 1]] = True
-        probs = np.where(mask, probs, 0.0)
+        sorted_indices = np.argsort(probs)[::-1]
+        sorted_probs = probs[sorted_indices]
+        cumulative_probs = np.cumsum(sorted_probs)
+        
+        # Find indices to remove
+        indices_to_remove = cumulative_probs > top_p
+        # Shift the mask to the right to keep the first element that exceeds top_p
+        indices_to_remove[1:] = indices_to_remove[:-1]
+        indices_to_remove[0] = False
+        
+        probs[sorted_indices[indices_to_remove]] = 0.0
 
-    # renormalize (avoid zero division)
-    s = probs.sum()
-    if s <= 0:
+    # Renormalize and sample
+    norm = np.sum(probs)
+    if norm <= 1e-9:  # Fallback to greedy if all probabilities are zero
         return int(np.argmax(logits))
-    probs = probs / s
-
+    
+    probs /= norm
     return int(np.random.choice(len(probs), p=probs))
 
+
 class Spinner(Thread):
-    def __init__(self, stop_evt: Event, label: str = "Generating"):
+    """
+    A simple spinner to indicate background activity, implemented as a context manager.
+    
+    Usage:
+        with Spinner("Working..."):
+            time.sleep(3)
+    """
+    def __init__(self, label: str = "Generating"):
         super().__init__(daemon=True)
-        self.stop_evt = stop_evt
-        self.label = label
-        self.frames = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+        self._stop_event = Event()
+        self._label = label
+        self._frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     def run(self):
         i = 0
-        while not self.stop_evt.is_set():
-            print(f"\r{self.label} {self.frames[i % len(self.frames)]}", end="", flush=True)
+        while not self._stop_event.is_set():
+            frame = self._frames[i % len(self._frames)]
+            print(f"\r{self._label} {frame}", end="", flush=True)
             i += 1
             time.sleep(0.08)
-        print("\r", end="", flush=True)
+        # Clear the line
+        print("\r" + " " * (len(self._label) + 2) + "\r", end="", flush=True)
+        
+    def __enter__(self):
+        self.start()
+        return self
 
-# -----------------------------
-# MNN LLM wrapper
-# -----------------------------
+    def __exit__(self, exc_type, exc_value, traceback):
+        self._stop_event.set()
+        self.join()
+
+# --------------------------------------------------------------------------
+# MNN LLM Wrapper
+# --------------------------------------------------------------------------
+
 class MNNLLM:
-    def __init__(self, mnn_path: str, backend: str = "CPU", threads: int = 0):
-        self.interpreter = MNN.Interpreter(mnn_path)
+    """A wrapper for an MNN Large Language Model."""
+    
+    _BACKEND_MAP: Dict[str, MNN.ForwardType] = {
+        "CPU": MNN.ForwardType.MNN_FORWARD_CPU,
+        "OPENCL": MNN.ForwardType.MNN_FORWARD_OPENCL,
+        "VULKAN": MNN.ForwardType.MNN_FORWARD_VULKAN,
+        "METAL": MNN.ForwardType.MNN_FORWARD_METAL,
+    }
 
-        # Session config
+    def __init__(self, model_path: str, backend: str = "CPU", threads: int = 4):
+        """
+        Initializes the MNN interpreter and session.
+
+        Args:
+            model_path: Path to the .mnn model file.
+            backend: The computation backend to use (e.g., "CPU", "OPENCL").
+            threads: Number of threads to use for CPU backend.
+        """
+        self.interpreter = MNN.Interpreter(model_path)
+        
         sess_cfg = MNN.SessionConfig()
-        if threads and threads > 0:
-            sess_cfg.numThread = int(threads)
+        if threads > 0:
+            sess_cfg.numThread = threads
 
-        # Backend config (best-effort; safe on CPU if others unavailable)
         backend_cfg = MNN.BackendConfig()
         backend_cfg.precision = MNN.BackendConfig.Precision_Normal
 
-        # Choose forwardType
-        fwd_map = {
-            "CPU": MNN.ForwardType.MNN_FORWARD_CPU,
-            "OPENCL": MNN.ForwardType.MNN_FORWARD_OPENCL,
-            "VULKAN": MNN.ForwardType.MNN_FORWARD_VULKAN,
-            "METAL": MNN.ForwardType.MNN_FORWARD_METAL,
-        }
-        sess_cfg.forwardType = fwd_map.get(backend.upper(), MNN.ForwardType.MNN_FORWARD_CPU)
+        backend_type = self._BACKEND_MAP.get(backend.upper(), MNN.ForwardType.MNN_FORWARD_CPU)
+        sess_cfg.forwardType = backend_type
 
         self.session = self.interpreter.createSession(sess_cfg, backend_cfg)
         self.input_tensor = self.interpreter.getSessionInput(self.session)
         self.output_tensor = self.interpreter.getSessionOutput(self.session)
+        self._last_input_shape: Optional[tuple] = None
+        self._host_output_buffer: Optional[MNN.Tensor] = None
 
-        # Cache to avoid repeated resizes when len is the same
-        self._last_shape = None
-
-        # Pre-allocate host output wrapper (on-demand once we know shape)
-        self._host_output = None
-
-    def _ensure_input(self, arr: np.ndarray):
-        shape = arr.shape
-        if shape != self._last_shape:
-            self.interpreter.resizeTensor(self.input_tensor, shape)
+    def _prepare_input(self, token_ids: np.ndarray):
+        """Resizes session if needed and copies input data to the device."""
+        if token_ids.shape != self._last_input_shape:
+            self.interpreter.resizeTensor(self.input_tensor, token_ids.shape)
             self.interpreter.resizeSession(self.session)
-            self._last_shape = shape
+            self._last_input_shape = token_ids.shape
 
-        # MNN host tensor for input (copyFrom pulls from host to device)
-        host_in = MNN.Tensor(
-            shape,
-            MNN.Halide_Type_Int,                    # will cast below if needed
-            arr.astype(np.int32, copy=False),       # most exports expect int32
-            MNN.Tensor_DimensionType_Caffe
+        host_tensor = MNN.Tensor(
+            token_ids.shape,
+            MNN.Halide_Type_Int,
+            token_ids.astype(np.int32), # Most models expect int32
+            MNN.Tensor_DimensionType_Caffe,
         )
-        self.input_tensor.copyFrom(host_in)
+        self.input_tensor.copyFrom(host_tensor)
 
-    def _host_read(self) -> np.ndarray:
-        """
-        Device-agnostic safe read of output tensor. Returns np.ndarray.
-        """
-        # Re-create wrapper if shape changed
+    def _read_output(self) -> np.ndarray:
+        """Copies output data from the device and returns it as a NumPy array."""
         out_dims = self.output_tensor.getShape()
-        if (self._host_output is None) or (self._host_output.getShape() != out_dims):
-            self._host_output = MNN.Tensor(
-                self.output_tensor,
-                MNN.Tensor_DimensionType_Caffe
+        
+        if self._host_output_buffer is None or self._host_output_buffer.getShape() != out_dims:
+            self._host_output_buffer = MNN.Tensor(
+                self.output_tensor, MNN.Tensor_DimensionType_Caffe
             )
-        self.output_tensor.copyToHostTensor(self._host_output)
-        data = np.array(self._host_output.getData())
-        # If output is flattened, try to reshape using dims
-        try:
-            if np.prod(out_dims) == data.size:
-                data = data.reshape(out_dims)
-        except Exception:
-            pass
+
+        self.output_tensor.copyToHostTensor(self._host_output_buffer)
+        data = np.array(self._host_output_buffer.getData())
+
+        # Ensure correct shape, as getData() can return a flattened array
+        if np.prod(out_dims) == data.size:
+            data = data.reshape(out_dims)
+        
         return data
 
-    def forward(self, token_ids: np.ndarray) -> np.ndarray:
-        self._ensure_input(token_ids)
+    def __call__(self, token_ids: np.ndarray) -> np.ndarray:
+        """
+        Performs a forward pass of the model.
+
+        Args:
+            token_ids: A NumPy array of input token IDs, typically shape (1, seq_len).
+
+        Returns:
+            A NumPy array of the model's output logits.
+        """
+        self._prepare_input(token_ids)
         self.interpreter.runSession(self.session)
-        return self._host_read()
+        return self._read_output()
 
-# -----------------------------
-# Chat loop with simple generation
-# -----------------------------
+# --------------------------------------------------------------------------
+# Generation Logic
+# --------------------------------------------------------------------------
+
+def run_generation(
+    llm: MNNLLM,
+    tokenizer: AutoTokenizer,
+    prompt_tokens: List[int],
+    args: argparse.Namespace,
+):
+    """Runs the autoregressive generation loop."""
+    
+    # NOTE: This is a naive implementation without a KV cache.
+    # In each step, the model re-processes all tokens. A KV cache-enabled model
+    # would only need to process the newest token after the first pass.
+    
+    generated_tokens: List[int] = []
+    all_tokens = np.array([prompt_tokens], dtype=np.int32)
+    eos_token_id = tokenizer.eos_token_id
+
+    for _ in range(args.max_new_tokens):
+        logits = llm(all_tokens)
+
+        # Extract logits for the very last token
+        # Common shapes: [batch, sequence_len, vocab_size]
+        last_token_logits = logits[0, -1, :]
+
+        next_token_id = sample(
+            logits=last_token_logits,
+            temp=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+        )
+
+        if eos_token_id is not None and next_token_id == eos_token_id:
+            break
+
+        generated_tokens.append(next_token_id)
+        
+        # Append the new token and continue the loop
+        all_tokens = np.append(
+            all_tokens, [[next_token_id]], axis=1
+        ).astype(np.int32)
+
+    return tokenizer.decode(generated_tokens, skip_special_tokens=True)
+
+# --------------------------------------------------------------------------
+# Main Execution
+# --------------------------------------------------------------------------
+
+def parse_args():
+    """Parses command-line arguments."""
+    parser = argparse.ArgumentParser(description="Run a chat session with an MNN LLM.")
+    
+    model_group = parser.add_argument_group("Model and Backend Configuration")
+    model_group.add_argument("--model", type=str, required=True, help="Path to the .mnn model file.")
+    model_group.add_argument("--hf_model", type=str, default="meta-llama/Meta-Llama-3.1-8B", help="Hugging Face model ID for the tokenizer.")
+    model_group.add_argument("--backend", type=str, default="CPU", choices=["CPU", "OPENCL", "VULKAN", "METAL"], help="MNN backend to use.")
+    model_group.add_argument("--threads", type=int, default=4, help="Number of CPU threads for inference (0 for auto).")
+
+    gen_group = parser.add_argument_group("Generation Parameters")
+    gen_group.add_argument("--max_new_tokens", type=int, default=128, help="Maximum number of new tokens to generate.")
+    gen_group.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature. Set to 0 for greedy decoding.")
+    gen_group.add_argument("--top_p", type=float, default=0.9, help="Nucleus sampling (top-p) probability.")
+    gen_group.add_argument("--top_k", type=int, default=50, help="Top-k sampling cutoff.")
+    
+    return parser.parse_args()
+
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="llama3.mnn", help="Path to .mnn file")
-    ap.add_argument("--hf_model", default="meta-llama/Llama-3.2-1B", help="Tokenizer model id")
-    ap.add_argument("--backend", default="CPU", choices=["CPU","OPENCL","VULKAN","METAL"])
-    ap.add_argument("--threads", type=int, default=0, help="CPU threads (0=auto)")
-    ap.add_argument("--max_new_tokens", type=int, default=64)
-    ap.add_argument("--temperature", type=float, default=0.0, help="0 = greedy")
-    ap.add_argument("--top_p", type=float, default=0.9)
-    ap.add_argument("--top_k", type=int, default=0)
-    args = ap.parse_args()
+    """Main function to run the interactive chat loop."""
+    args = parse_args()
 
+    print("Loading tokenizer and model...")
     tokenizer = AutoTokenizer.from_pretrained(args.hf_model)
-    eos_id = tokenizer.eos_token_id
-    pad_id = tokenizer.pad_token_id or eos_id
-
     llm = MNNLLM(args.model, backend=args.backend, threads=args.threads)
 
-    # Warm-up (helps first-token latency on some backends)
-    _ = llm.forward(np.array([[eos_id]], dtype=np.int32))
+    # Warm-up run can reduce first-token latency
+    warmup_token = tokenizer.eos_token_id or 0
+    _ = llm(np.array([[warmup_token]], dtype=np.int32))
 
-    print("Type 'exit' or 'quit' to leave.\n")
+    print("\n✅ Model loaded. Type 'exit' or 'quit' to end the session.")
+    print("-" * 50)
+
     try:
         while True:
-            user = input("You: ").strip()
-            if user.lower() in {"exit", "quit"}:
-                print("종료합니다.")
+            user_input = input("👤 You: ").strip()
+            if user_input.lower() in {"exit", "quit"}:
+                print("\n👋 Goodbye!")
                 break
+            if not user_input:
+                continue
 
-            prompt = apply_chat_template(tokenizer, user)
-            ids = tokenizer(prompt, add_special_tokens=True, return_tensors=None)["input_ids"]
-            input_ids = np.array([ids], dtype=np.int32)
+            prompt_text = apply_chat_template(tokenizer, user_input)
+            prompt_tokens = tokenizer.encode(prompt_text)
 
-            stop_evt = Event()
-            spin = Spinner(stop_evt)
-            spin.start()
+            t_start = time.perf_counter()
+            with Spinner("Generating..."):
+                response_text = run_generation(llm, tokenizer, prompt_tokens, args)
+            t_delta = time.perf_counter() - t_start
+            
+            num_generated = len(tokenizer.encode(response_text))
+            tps = num_generated / t_delta if t_delta > 0 else float('inf')
 
-            t0 = time.time()
-
-            # Try one forward to discover output format
-            out = llm.forward(input_ids)
-
-            # Case A: the model already returns token IDs (rare but possible)
-            decoded_text = None
-            if np.issubdtype(out.dtype, np.integer) and out.ndim <= 2:
-                gen_ids = out.reshape(-1).tolist()
-                decoded_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
-
-            # Case B: logits -> run a simple autoregressive loop
-            if decoded_text is None:
-                cur = input_ids.copy()
-                generated = []
-                for _ in range(args.max_new_tokens):
-                    logits = out
-                    # common shapes: [B, T, V] or [T, V] or [V]
-                    if logits.ndim == 3:
-                        last = logits[0, -1]
-                    elif logits.ndim == 2:
-                        last = logits[-1]
-                    else:
-                        last = logits
-
-                    next_id = sample_from_logits(
-                        last, temperature=args.temperature,
-                        top_p=args.top_p, top_k=args.top_k
-                    )
-                    generated.append(next_id)
-                    if eos_id is not None and next_id == eos_id:
-                        break
-
-                    # Append and run again (naive loop; no KV cache)
-                    cur = np.concatenate([cur, np.array([[next_id]], dtype=np.int32)], axis=1)
-                    out = llm.forward(cur)
-
-                decoded_text = tokenizer.decode(generated, skip_special_tokens=True)
-
-            dt = time.time() - t0
-            stop_evt.set()
-            spin.join()
-
-            print(f"Response ({dt:.2f}s): {decoded_text}\n")
+            print(f"🤖 Assistant ({t_delta:.2f}s, {tps:.2f} t/s):")
+            print(response_text)
+            print("-" * 50)
 
     except KeyboardInterrupt:
-        print("\n종료합니다.")
+        print("\n\n👋 Interrupted. Goodbye!")
+    except Exception as e:
+        print(f"\nAn unexpected error occurred: {e}")
 
 if __name__ == "__main__":
     main()
