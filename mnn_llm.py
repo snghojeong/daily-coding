@@ -25,7 +25,7 @@ def apply_chat_template(tokenizer: AutoTokenizer, user_text: str, chat_history: 
             messages, tokenize=False, add_generation_prompt=True
         )
     except Exception:
-        print("Warning: Could not apply chat template. Using raw prompt.")
+        print(f"Warning: Could not apply chat template. Using raw prompt. {e}")
         # Fallback to a simple concatenation if template fails
         full_text = ""
         for msg in messages:
