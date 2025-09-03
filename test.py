@@ -88,7 +88,7 @@ def sum_primes_threaded(data_reader: DataReader, num_workers: int = 4) -> int:
         
 def main():
     """Main function to process data and print the results."""
-    args = parse_args("path")
+    args = parse_args()
     file_data_reader = FileDataReader(args.path) 
     result = sum_primes_threaded(file_data_reader)
     print(f"Final Result: {result}")
