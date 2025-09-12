@@ -134,7 +134,6 @@ static void simulate_input(ReactiveBus& bus){
     std::this_thread::sleep_for(20ms);  bus.on_next({"quit"});
 }
 
-// ---------- Main ----------
 int main(){
     ReactiveBus bus(32); Image cur; std::atomic<bool> exit{false};
     auto commands = bus.observable()
