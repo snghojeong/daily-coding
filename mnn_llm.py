@@ -17,7 +17,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 def apply_chat_template(tokenizer: AutoTokenizer, user_text: str, chat_history: Optional[List[Dict]] = None) -> str:
     """Applies the model's chat template, using a chat history if provided."""
-    messages = chat_history or []
+    messages = chat_history or list()
     messages.append({"role": "user", "content": user_text})
     
     try:
