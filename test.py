@@ -26,7 +26,7 @@ class FileDataReader:
                     try:
                         yield int(line.strip())
                     except ValueError:
-                        print(f"Warning: Invalid number in line: {line.strip()}")  # Show the line content
+                        print(f"Warning: Invalid number in line: {line.strip()}")
         except FileNotFoundError as e:
             print(f"Error: File not found: {self.file_path} {e}")
         except Exception as e:  # Catch other potential file errors
