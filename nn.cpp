@@ -152,7 +152,7 @@ int main(){
         ->subscribe([](auto& c){ std::cout<<"[Warn] Unknown: "<<c.arg<<"\n"; });
 
     std::thread producer(simulate_input,std::ref(bus));
-    while(!exit.load()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    while(!exit.load()) std::this_thread::sleep_for(std::chrono::milliseconds(100));
     if(producer.joinable()) producer.join();
     un1(); un2(); un3(); un4();
     return 0;
