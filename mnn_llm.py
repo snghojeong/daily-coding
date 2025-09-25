@@ -262,7 +262,7 @@ def parse_args():
     model_group.add_argument("--model", type=str, required=True, help="Path to the .mnn model file.")
     model_group.add_argument("--hf_model", type=str, default="meta-llama/Meta-Llama-3.1-8B", help="Hugging Face model ID for the tokenizer.")
     model_group.add_argument("--backend", type=str, default="CPU", choices=["CPU", "OPENCL", "VULKAN", "METAL"], help="MNN backend to use.")
-    model_group.add_argument("--threads", type=int, default=4, help="Number of CPU threads for inference (0 for auto).")
+    model_group.add_argument("--threads", type=int, default=1, help="Number of CPU threads for inference (0 for auto).")
 
     gen_group = parser.add_argument_group("Generation Parameters")
     gen_group.add_argument("--max_new_tokens", type=int, default=128, help="Maximum number of new tokens to generate.")
