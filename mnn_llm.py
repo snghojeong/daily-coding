@@ -1,105 +1,130 @@
+#!/usr/bin/env python3
 import argparse
 import os
+import sys
 import time
+from dataclasses import dataclass
 from threading import Event, Thread
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
-import MNN
-import numpy as np
-from transformers import AutoTokenizer
-
-# Suppress tokenizer parallelism warning
+# Suppress tokenizer parallelism warning (set before import)
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-# --------------------------------------------------------------------------
-# Utilities
-# --------------------------------------------------------------------------
+import numpy as np
+import MNN
+from transformers import AutoTokenizer
 
-def apply_chat_template(tokenizer: AutoTokenizer, user_text: str, chat_history: Optional[List[Dict]] = None) -> str:
-    """Applies the model's chat template, using a chat history if provided."""
-    messages = chat_history or list()
+# =============================================================================
+# Utilities
+# =============================================================================
+
+def now_s() -> str:
+    return time.strftime("%H:%M:%S")
+
+def apply_chat_template(
+    tokenizer: AutoTokenizer,
+    user_text: str,
+    chat_history: Optional[List[Dict[str, str]]] = None,
+) -> str:
+    """Apply HF chat template; fall back to simple role-tagged prompt."""
+    messages = list(chat_history or [])
     messages.append({"role": "user", "content": user_text})
-    
     try:
         return tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-    except Exception:
-        print(f"Warning: Could not apply chat template. Using raw prompt. {e}")
-        # Fallback to a simple concatenation if template fails
-        full_text = ""
-        for msg in messages:
-            full_text += f"{msg['role'].title()}: {msg['content']}\n"
-        return full_text.strip()
+    except Exception as e:
+        print(f"[{now_s()}] warn: chat template failed -> fallback ({e})")
+        return "\n".join(f"{m['role'].title()}: {m['content']}" for m in messages)
 
-def softmax(x: np.ndarray) -> np.ndarray:
-    """Computes a numerically stable softmax."""
-    e_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
-    return e_x / np.sum(e_x, axis=-1, keepdims=True)
+def softmax_stable(x: np.ndarray) -> np.ndarray:
+    x = x - np.max(x, axis=-1, keepdims=True)
+    np.exp(x, out=x)
+    s = x.sum(axis=-1, keepdims=True)
+    # Avoid div-by-zero
+    s = np.where(s <= 0.0, 1.0, s)
+    return x / s
 
-def sample(logits: np.ndarray, temp: float, top_p: float, top_k: int) -> int:
-    """Samples a token ID from logits using temperature, top-p, and top-k."""
-    if temp == 0.0:
+def sample_token(
+    logits: np.ndarray,
+    temp: float,
+    top_p: float,
+    top_k: int,
+    rng: np.random.Generator,
+) -> int:
+    """Temperature, then top-k, then top-p (nucleus). Greedy when temp<=0."""
+    if not np.all(np.isfinite(logits)):
+        # Fallback to greedy on bad logits
+        return int(np.nanargmax(logits))
+
+    if temp <= 0.0:
         return int(np.argmax(logits))
 
-    probs = softmax(logits / temp)
+    probs = softmax_stable(logits.astype(np.float64) / float(temp))
 
-    if top_k > 0:
-        top_k_indices = np.argpartition(probs, -top_k)[-top_k:]
-        probs = np.where(np.isin(np.arange(len(probs)), top_k_indices), probs, 0.0)
+    vocab = probs.shape[0]
+    if top_k > 0 and top_k < vocab:
+        # Keep only top_k highest probabilities
+        kth = np.argpartition(probs, -top_k)[-top_k:]
+        mask = np.zeros_like(probs, dtype=bool)
+        mask[kth] = True
+        probs = np.where(mask, probs, 0.0)
 
     if 0.0 < top_p < 1.0:
-        sorted_indices = np.argsort(probs)[::-1]
-        sorted_probs = probs[sorted_indices]
-        cumulative_probs = np.cumsum(sorted_probs)
-        
-        cutoff_index = (cumulative_probs > top_p).argmax()
-        probs[sorted_indices[cutoff_index:]] = 0.0
-    
-    norm = np.sum(probs)
-    if norm <= 1e-9:
+        order = np.argsort(-probs)
+        sorted_p = probs[order]
+        cumsum = np.cumsum(sorted_p)
+        # Smallest set with cumprob >= top_p
+        cutoff = np.searchsorted(cumsum, top_p, side="left") + 1
+        keep_idx = order[:cutoff]
+        mask = np.zeros_like(probs, dtype=bool)
+        mask[keep_idx] = True
+        probs = np.where(mask, probs, 0.0)
+
+    s = probs.sum()
+    if not np.isfinite(s) or s <= 1e-12:
         return int(np.argmax(logits))
-    
-    probs /= norm
-    return int(np.random.choice(len(probs), p=probs))
+
+    probs /= s
+    return int(rng.choice(probs.shape[0], p=probs))
 
 class Spinner(Thread):
-    """A simple spinner to indicate background activity, implemented as a context manager."""
-    def __init__(self, label: str = "Generating"):
+    """Lightweight TTY spinner; auto-clears its line."""
+    def __init__(self, label: str = "Working"):
         super().__init__(daemon=True)
-        self._stop_event = Event()
+        self._stop = Event()
         self._label = label
-        self._frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        self._is_spinning = False
+        self._frames = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+        self._width = len(label) + 2 + 1
 
     def run(self):
-        self._is_spinning = True
         i = 0
-        while not self._stop_event.is_set():
+        while not self._stop.is_set():
             frame = self._frames[i % len(self._frames)]
-            print(f"\r{self._label} {frame}", end="", flush=True)
+            msg = f"\r{self._label} {frame}"
+            self._width = max(self._width, len(msg))
+            print(msg.ljust(self._width), end="", flush=True)
             i += 1
             time.sleep(0.08)
-        # Clear the line
-        print("\r" + " " * (len(self._label) + 2) + "\r", end="", flush=True)
-        self._is_spinning = False
-        
+
+    def stop(self):
+        self._stop.set()
+        # Clear line
+        print("\r" + " " * self._width + "\r", end="", flush=True)
+
     def __enter__(self):
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        if self._is_spinning:
-            self._stop_event.set()
-            self.join()
+    def __exit__(self, exc_type, exc, tb):
+        self.stop()
 
-# --------------------------------------------------------------------------
+# =============================================================================
 # MNN LLM Wrapper (KV Cache-enabled)
-# --------------------------------------------------------------------------
+# =============================================================================
 
 class MNNLLM:
-    """A wrapper for a KV-cache-enabled MNN Large Language Model."""
-    
+    """KV-cache aware MNN runner with light autodiscovery of IO tensors."""
     _BACKEND_MAP: Dict[str, MNN.ForwardType] = {
         "CPU": MNN.ForwardType.MNN_FORWARD_CPU,
         "OPENCL": MNN.ForwardType.MNN_FORWARD_OPENCL,
@@ -108,223 +133,263 @@ class MNNLLM:
     }
 
     def __init__(self, model_path: str, backend: str = "CPU", threads: int = 4):
-        """Initializes the MNN interpreter and session for a KV-cache-enabled model."""
         self.interpreter = MNN.Interpreter(model_path)
-        
+
         sess_cfg = MNN.SessionConfig()
-        sess_cfg.numThread = threads
+        sess_cfg.numThread = max(0, int(threads))
+        sess_cfg.forwardType = self._BACKEND_MAP.get(backend.upper(), MNN.ForwardType.MNN_FORWARD_CPU)
+
         backend_cfg = MNN.BackendConfig()
         backend_cfg.precision = MNN.BackendConfig.Precision_Normal
-        backend_type = self._BACKEND_MAP.get(backend.upper(), MNN.ForwardType.MNN_FORWARD_CPU)
-        sess_cfg.forwardType = backend_type
-        
-        self.session = self.interpreter.createSession(sess_cfg, backend_cfg)
-        
-        # Identify the primary input/output tensors and KV cache tensors
-        # Assuming the MNN model is structured with KV cache inputs/outputs
-        self._input_tensor = self.interpreter.getSessionInput(self.session)
-        self._output_tensor = self.interpreter.getSessionOutput(self.session)
 
-        # Assuming KV cache tensors are named as 'past_key_values' and 'present_key_values'
-        # The actual names might differ based on the model converter
-        # This part requires knowledge of the specific MNN model's structure
-        self.kv_input_names = [name for name in self.interpreter.getSessionInputNames(self.session) if 'past_key_values' in name]
-        self.kv_output_names = [name for name in self.interpreter.getSessionOutputNames(self.session) if 'present_key_values' in name]
-        
-        self.kv_input_tensors = {name: self.interpreter.getSessionInput(self.session, name) for name in self.kv_input_names}
-        self.kv_output_tensors = {name: self.interpreter.getSessionOutput(self.session, name) for name in self.kv_output_names}
-        
+        self.session = self.interpreter.createSession(sess_cfg, backend_cfg)
+
+        # Discover IO names
+        self.in_names = list(self.interpreter.getSessionInputNames(self.session))
+        self.out_names = list(self.interpreter.getSessionOutputNames(self.session))
+
+        # Heuristics for primary io
+        # Input: pick first int tensor-like name; common: "input_ids"
+        self.input_name = next((n for n in self.in_names if "input" in n.lower()), self.in_names[0])
+        # Output: pick logits-like name
+        self.output_name = next((n for n in self.out_names if "logits" in n.lower()), self.out_names[0])
+
+        self._input_tensor = self.interpreter.getSessionInput(self.session, self.input_name)
+        self._output_tensor = self.interpreter.getSessionOutput(self.session, self.output_name)
+
+        # KV cache in/out discovery (robust to different exporters)
+        def match_any(name: str, keys: Iterable[str]) -> bool:
+            s = name.lower()
+            return any(k in s for k in keys)
+
+        kv_in_keys = ("past", "cache_in", "kvcache_in", "kv_in")
+        kv_out_keys = ("present", "cache_out", "kvcache_out", "kv_out")
+
+        self.kv_input_names = [n for n in self.in_names if match_any(n, kv_in_keys)]
+        self.kv_output_names = [n for n in self.out_names if match_any(n, kv_out_keys)]
+
+        self.kv_input_tensors = {n: self.interpreter.getSessionInput(self.session, n) for n in self.kv_input_names}
+        self.kv_output_tensors = {n: self.interpreter.getSessionOutput(self.session, n) for n in self.kv_output_names}
+
         self._host_output_buffer: Optional[MNN.Tensor] = None
 
-    def _prepare_input_and_kv_cache(self, input_ids: np.ndarray, past_key_values: Optional[Dict[str, np.ndarray]] = None):
-        """Resizes session if needed and copies input data and KV cache to the device."""
-        
-        # Resize input tensor
+    @staticmethod
+    def _np_to_host_tensor(arr: np.ndarray, dtype) -> MNN.Tensor:
+        return MNN.Tensor(arr.shape, dtype, arr, MNN.Tensor_DimensionType_Caffe)
+
+    def _prepare_inputs(
+        self,
+        input_ids: np.ndarray,
+        past_key_values: Optional[Dict[str, np.ndarray]] = None,
+    ) -> None:
+        # Input ids must be int32 for MNN
+        if input_ids.dtype != np.int32:
+            input_ids = input_ids.astype(np.int32, copy=False)
+
         self.interpreter.resizeTensor(self._input_tensor, input_ids.shape)
-        
-        # Resize KV cache input tensors based on past_key_values shape
+
         if past_key_values:
             for name, data in past_key_values.items():
-                if name in self.kv_input_tensors:
-                    self.interpreter.resizeTensor(self.kv_input_tensors[name], data.shape)
-        
+                ten = self.kv_input_tensors.get(name)
+                if ten is not None:
+                    self.interpreter.resizeTensor(ten, data.shape)
+
         self.interpreter.resizeSession(self.session)
 
-        # Copy input_ids
-        host_input = MNN.Tensor(input_ids.shape, MNN.Halide_Type_Int, input_ids.astype(np.int32), MNN.Tensor_DimensionType_Caffe)
+        # Copy primary input
+        host_input = self._np_to_host_tensor(input_ids, MNN.Halide_Type_Int)
         self._input_tensor.copyFrom(host_input)
-        
-        # Copy past_key_values
+
+        # Copy KV inputs
         if past_key_values:
             for name, data in past_key_values.items():
-                if name in self.kv_input_tensors:
-                    host_kv_input = MNN.Tensor(data.shape, MNN.Halide_Type_Float, data.astype(np.float32), MNN.Tensor_DimensionType_Caffe)
-                    self.kv_input_tensors[name].copyFrom(host_kv_input)
+                ten = self.kv_input_tensors.get(name)
+                if ten is None:
+                    continue
+                if data.dtype != np.float32:
+                    data = data.astype(np.float32, copy=False)
+                host_kv = self._np_to_host_tensor(data, MNN.Halide_Type_Float)
+                ten.copyFrom(host_kv)
 
-    def _read_output_and_kv_cache(self) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
-        """Copies output data and KV cache from the device."""
-        # Read primary output tensor
+    def _collect_outputs(self) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+        # Logits
         out_dims = self._output_tensor.getShape()
         if self._host_output_buffer is None or self._host_output_buffer.getShape() != out_dims:
             self._host_output_buffer = MNN.Tensor(self._output_tensor, MNN.Tensor_DimensionType_Caffe)
         self._output_tensor.copyToHostTensor(self._host_output_buffer)
-        output_data = np.array(self._host_output_buffer.getData()).reshape(out_dims)
-        
-        # Read KV cache output tensors
-        present_key_values = {}
-        for name, tensor in self.kv_output_tensors.items():
-            out_dims_kv = tensor.getShape()
-            host_kv_output = MNN.Tensor(tensor, MNN.Tensor_DimensionType_Caffe)
-            tensor.copyToHostTensor(host_kv_output)
-            present_key_values[name] = np.array(host_kv_output.getData()).reshape(out_dims_kv)
-            
-        return output_data, present_key_values
+        logits = np.array(self._host_output_buffer.getData()).reshape(out_dims)
 
-    def __call__(self, input_ids: np.ndarray, past_key_values: Optional[Dict[str, np.ndarray]] = None) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
-        """
-        Performs a forward pass.
+        # KV outputs
+        present: Dict[str, np.ndarray] = {}
+        for name, ten in self.kv_output_tensors.items():
+            host = MNN.Tensor(ten, MNN.Tensor_DimensionType_Caffe)
+            ten.copyToHostTensor(host)
+            arr = np.array(host.getData()).reshape(ten.getShape())
+            present[name] = arr
+        return logits, present
 
-        Args:
-            input_ids: A NumPy array of input token IDs.
-            past_key_values: A dictionary of NumPy arrays representing the KV cache from the previous step.
-
-        Returns:
-            A tuple of (logits, present_key_values).
-        """
-        self._prepare_input_and_kv_cache(input_ids, past_key_values)
+    def __call__(
+        self,
+        input_ids: np.ndarray,
+        past_key_values: Optional[Dict[str, np.ndarray]] = None,
+    ) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+        self._prepare_inputs(input_ids, past_key_values)
         self.interpreter.runSession(self.session)
-        return self._read_output_and_kv_cache()
+        return self._collect_outputs()
 
-# --------------------------------------------------------------------------
-# Generation Logic (KV Cache-enabled)
-# --------------------------------------------------------------------------
+# =============================================================================
+# Generation
+# =============================================================================
+
+@dataclass
+class GenParams:
+    max_new_tokens: int = 128
+    temperature: float = 0.7
+    top_p: float = 0.9
+    top_k: int = 50
+    stream: bool = False
+    stop_ids: Optional[List[int]] = None
+    seed: Optional[int] = None
 
 def run_generation(
     llm: MNNLLM,
     tokenizer: AutoTokenizer,
     prompt_tokens: List[int],
-    args: argparse.Namespace,
-):
-    """Runs the autoregressive generation loop with a KV cache."""
-    
-    generated_tokens: List[int] = []
-    eos_token_id = tokenizer.eos_token_id
-    
-    # 1. Prefill Pass (for prompt)
-    prompt_array = np.array([prompt_tokens], dtype=np.int32)
-    with Spinner("Prefilling"):
-        logits, past_key_values = llm(prompt_array)
-    
-    # Extract logits for the last token of the prompt
-    last_token_logits = logits[0, -1, :]
-    
-    next_token_id = sample(
-        logits=last_token_logits,
-        temp=args.temperature,
-        top_p=args.top_p,
-        top_k=args.top_k,
-    )
-    generated_tokens.append(next_token_id)
+    params: GenParams,
+) -> str:
+    rng = np.random.default_rng(params.seed) if params.seed is not None else np.random.default_rng()
 
-    # 2. Decoding Loop (one token at a time)
-    for _ in range(args.max_new_tokens - 1):
-        if eos_token_id is not None and next_token_id == eos_token_id:
+    generated: List[int] = []
+    eos_id = tokenizer.eos_token_id
+    stop_ids = set(params.stop_ids or ([] if eos_id is None else [eos_id]))
+
+    # Prefill
+    prompt_arr = np.asarray([prompt_tokens], dtype=np.int32)
+    with Spinner("Prefill"):
+        logits, kv = llm(prompt_arr)
+
+    # last-step logits over vocab
+    last_logits = logits[0, -1, :]
+
+    next_id = sample_token(last_logits, params.temperature, params.top_p, params.top_k, rng)
+    generated.append(next_id)
+
+    if params.stream:
+        # Stream detokenized chunk-wise
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        sys.stdout.write(tokenizer.decode([next_id], skip_special_tokens=True))
+        sys.stdout.flush()
+
+    # Decode loop
+    for _ in range(params.max_new_tokens - 1):
+        if next_id in stop_ids:
             break
-        
-        # Input is now just the last generated token
-        input_array = np.array([[next_token_id]], dtype=np.int32)
-        
-        # The model uses the KV cache from the previous step
-        logits, past_key_values = llm(input_array, past_key_values)
-        
-        # Logits shape is now [1, 1, vocab_size]
-        last_token_logits = logits[0, 0, :]
+        inp = np.asarray([[next_id]], dtype=np.int32)
+        logits, kv = llm(inp, kv)
+        last_logits = logits[0, 0, :]
 
-        next_token_id = sample(
-            logits=last_token_logits,
-            temp=args.temperature,
-            top_p=args.top_p,
-            top_k=args.top_k,
-        )
-        generated_tokens.append(next_token_id)
+        next_id = sample_token(last_logits, params.temperature, params.top_p, params.top_k, rng)
+        generated.append(next_id)
 
-    return tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        if params.stream:
+            sys.stdout.write(tokenizer.decode([next_id], skip_special_tokens=True))
+            sys.stdout.flush()
 
-# --------------------------------------------------------------------------
-# Main Execution
-# --------------------------------------------------------------------------
+    if params.stream:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
-def parse_args():
-    """Parses command-line arguments."""
-    parser = argparse.ArgumentParser(description="Run a chat session with an MNN LLM.")
-    
-    model_group = parser.add_argument_group("Model and Backend Configuration")
-    model_group.add_argument("--model", type=str, required=True, help="Path to the .mnn model file.")
-    model_group.add_argument("--hf_model", type=str, default="meta-llama/Meta-Llama-3.1-8B", help="Hugging Face model ID for the tokenizer.")
-    model_group.add_argument("--backend", type=str, default="CPU", choices=["CPU", "OPENCL", "VULKAN", "METAL"], help="MNN backend to use.")
-    model_group.add_argument("--threads", type=int, default=1, help="Number of CPU threads for inference (0 for auto).")
+    return tokenizer.decode(generated, skip_special_tokens=True)
 
-    gen_group = parser.add_argument_group("Generation Parameters")
-    gen_group.add_argument("--max_new_tokens", type=int, default=128, help="Maximum number of new tokens to generate.")
-    gen_group.add_argument("--temperature", type=float, default=0.7, help="Sampling temperature. Set to 0 for greedy decoding.")
-    gen_group.add_argument("--top_p", type=float, default=0.9, help="Nucleus sampling (top-p) probability.")
-    gen_group.add_argument("--top_k", type=int, default=50, help="Top-k sampling cutoff.")
-    
-    return parser.parse_args()
+# =============================================================================
+# CLI
+# =============================================================================
 
-def main():
-    """Main function to run the interactive chat loop."""
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Interactive chat with an MNN LLM (KV-cache).")
+
+    g_model = p.add_argument_group("Model/Backend")
+    g_model.add_argument("--model", type=str, required=True, help="Path to .mnn file.")
+    g_model.add_argument("--hf_model", type=str, default="meta-llama/Meta-Llama-3.1-8B", help="Tokenizer model id.")
+    g_model.add_argument("--backend", type=str, default="CPU",
+                         choices=["CPU", "OPENCL", "VULKAN", "METAL"], help="MNN backend.")
+    g_model.add_argument("--threads", type=int, default=1, help="CPU threads (0 for auto).")
+
+    g_gen = p.add_argument_group("Generation")
+    g_gen.add_argument("--max_new_tokens", type=int, default=128)
+    g_gen.add_argument("--temperature", type=float, default=0.7)
+    g_gen.add_argument("--top_p", type=float, default=0.9)
+    g_gen.add_argument("--top_k", type=int, default=50)
+    g_gen.add_argument("--stream", action="store_true", help="Stream tokens as they are generated.")
+    g_gen.add_argument("--seed", type=int, default=None, help="RNG seed for reproducibility.")
+    g_gen.add_argument("--no_chat_template", action="store_true", help="Disable chat template, use raw text.")
+
+    return p.parse_args()
+
+def main() -> None:
     args = parse_args()
 
-    print("Loading tokenizer and model...")
+    print(f"[{now_s()}] loading tokenizer…")
     tokenizer = AutoTokenizer.from_pretrained(args.hf_model)
-    
+
+    print(f"[{now_s()}] loading MNN model…")
     try:
         llm = MNNLLM(args.model, backend=args.backend, threads=args.threads)
-        # Warm-up run with KV cache logic
-        warmup_token = tokenizer.eos_token_id or 0
-        _, _ = llm(np.array([[warmup_token]], dtype=np.int32))
+        # light warmup
+        warm = np.array([[tokenizer.eos_token_id or 0]], dtype=np.int32)
+        _ = llm(warm)
     except Exception as e:
-        print(f"\n❌ Error loading model: {e}")
+        print(f"[{now_s()}] error: failed to load model -> {e}")
         return
 
-    print("\n✅ Model loaded. Type 'exit' or 'quit' to end the session.")
-    print("-" * 50)
+    print(f"[{now_s()}] ready. Type 'exit' or 'quit' to end.")
+    print("-" * 60)
 
-    chat_history: List[Dict] = []
-    
+    history: List[Dict[str, str]] = []
+    params = GenParams(
+        max_new_tokens=args.max_new_tokens,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        top_k=args.top_k,
+        stream=args.stream,
+        seed=args.seed,
+    )
+
     try:
         while True:
-            user_input = input("👤 You: ").strip()
-            if user_input.lower() in {"exit", "quit"}:
-                print("\n👋 Goodbye!")
+            user = input("👤 You: ").strip()
+            if user.lower() in {"exit", "quit"}:
+                print("\n👋 Goodbye.")
                 break
-            if not user_input:
+            if not user:
                 continue
 
-            # Update chat history and apply template
-            prompt_text = apply_chat_template(tokenizer, user_input, chat_history)
-            prompt_tokens = tokenizer.encode(prompt_text, add_special_tokens=True)
+            if args.no_chat_template:
+                prompt_text = user
+            else:
+                prompt_text = apply_chat_template(tokenizer, user, history)
 
-            t_start = time.perf_counter()
-            response_text = run_generation(llm, tokenizer, prompt_tokens, args)
-            t_delta = time.perf_counter() - t_start
-            
-            num_generated = len(tokenizer.encode(response_text, add_special_tokens=False))
-            tps = num_generated / t_delta if t_delta > 0 else float('inf')
+            prompt_ids = tokenizer.encode(prompt_text, add_special_tokens=True)
 
-            print(f"\n🤖 Assistant ({t_delta:.2f}s, {tps:.2f} t/s):")
-            print(response_text)
-            print("-" * 50)
-            
-            # Add user and assistant messages to history for the next turn
-            chat_history.append({"role": "user", "content": user_input})
-            chat_history.append({"role": "assistant", "content": response_text})
+            t0 = time.perf_counter()
+            reply = run_generation(llm, tokenizer, prompt_ids, params)
+            dt = time.perf_counter() - t0
+
+            gen_tokens = tokenizer.encode(reply, add_special_tokens=False)
+            tps = (len(gen_tokens) / dt) if dt > 0 else float("inf")
+
+            print(f"\n🤖 Assistant ({dt:.2f}s, {tps:.2f} tok/s):")
+            print(reply)
+            print("-" * 60)
+
+            history.append({"role": "user", "content": user})
+            history.append({"role": "assistant", "content": reply})
 
     except KeyboardInterrupt:
-        print("\n\n👋 Interrupted. Goodbye!")
+        print("\n\n👋 Interrupted. Goodbye.")
     except Exception as e:
-        print(f"\nAn unexpected error occurred: {e}")
+        print(f"\n[{now_s()}] unexpected error: {e}")
 
 if __name__ == "__main__":
     main()
