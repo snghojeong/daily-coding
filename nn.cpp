@@ -13,7 +13,6 @@
 #include <unordered_map>
 #include <vector>
 
-// ---------- Tiny thread-safe queue ----------
 template<class T>
 class TSQueue {
 public:
@@ -42,7 +41,6 @@ private:
     std::queue<T> q_; std::size_t cap_; bool closed_{false};
 };
 
-// ---------- Minimal Rx-like Observable ----------
 template<typename T>
 class Observable : public std::enable_shared_from_this<Observable<T>>{
 public:
@@ -88,7 +86,6 @@ private:
     std::mutex mu_; std::unordered_map<std::size_t,Fn> subs_; std::size_t next_id_{0};
 };
 
-// ---------- Event bus ----------
 struct Event{ std::string text; };
 
 class ReactiveBus{
