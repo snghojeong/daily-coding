@@ -3,96 +3,104 @@ from functools import reduce
 from math import sqrt
 from typing import Callable, Iterable, Generator, Protocol
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from queue import Queue, Empty
-from itertools import islice # import islice
+from itertools import islice
+
 
 class DataReader(Protocol):
-    """Protocol for reading data from various sources."""
+    """Protocol for reading integer data."""
     def read(self) -> Generator[int, None, None]:
-        """Abstract function to read data and yields integers."""
         ...
 
+
 class FileDataReader:
-    """Reads data from a file."""
+    """Reads integers from a file."""
     def __init__(self, file_path: str):
-        """Initializes FileDataReader with the file path."""
         self.file_path = file_path
 
     def read(self) -> Generator[int, None, None]:
-        """Reads integers from the file."""
         try:
             with open(self.file_path, 'rt') as file:
                 for line in file:
+                    line = line.strip()
+                    if not line:
+                        continue
                     try:
-                        yield int(line.strip())
+                        yield int(line)
                     except ValueError:
-                        print(f"Warning: Invalid number in line: {line.strip()}")
-        except FileNotFoundError as e:
-            print(f"Error: File not found: {self.file_path} {e}")
-        except Exception as e:  # Catch other potential file errors
+                        print(f"Warning: Invalid number in line: {line}")
+        except FileNotFoundError:
+            print(f"Error: File not found: {self.file_path}")
+        except Exception as e:
             print(f"Error reading file: {e}")
 
+
 class StringDataReader:
-    """Reads data from a string."""
+    """Reads integers from a semicolon-separated string."""
     def __init__(self, data_string: str):
-        """Initializes StringDataReader with the data string."""
         self.data_string = data_string
 
     def read(self) -> Generator[int, None, None]:
-        """Reads integers from the string."""
-        for number in self.data_string.split(';'):
+        for part in self.data_string.split(';'):
+            part = part.strip()
+            if not part:
+                continue
             try:
-                yield int(number.strip()) #strip in case of whitespaces in the string
+                yield int(part)
             except ValueError:
-                print(f"Warning: Invalid number: {number.strip()}") #strip in case of whitespaces in the string
+                print(f"Warning: Invalid number: {part}")
 
-def is_prime(number: int) -> bool:
-    """Checks if a number is prime (optimized)."""
-    if number <= 1:
-        return False
-    if number % 2 == 0 and number > 2:
-        return False
-    for divisor in range(3, int(sqrt(number)) + 1, 2):
-        if number % divisor == 0:
-            return False
-    return True
 
-def process_chunk(chunk: list[int], transformations: Iterable[Callable] = (lambda x: x * x,)) -> list[int]:
-    """Processes a chunk of data with transformations and filtering."""
-    processed_chunk = list()
+def is_prime(n: int) -> bool:
+    """Check if n is prime."""
+    if n <= 1:
+        return False
+    if n % 2 == 0:
+        return n == 2
+    limit = int(sqrt(n)) + 1
+    return all(n % d != 0 for d in range(3, limit, 2))
+
+
+def process_chunk(chunk: list[int], transformations: Iterable[Callable[[int], int]] = (lambda x: x * x,)) -> list[int]:
+    """Apply transformations and keep primes."""
+    processed = []
     for num in chunk:
-        transformed = reduce(lambda acc, f: f(acc), transformations, num)
-        if is_prime(transformed):
-            processed_chunk.append(transformed)
-    return processed_chunk
+        val = reduce(lambda acc, f: f(acc), transformations, num)
+        if is_prime(val):
+            processed.append(val)
+    return processed
 
-def sum_primes_threaded(data_reader: DataReader, num_workers: int = 4) -> int:
-    """Reads data, processes it in parallel, and sums prime numbers."""
 
+def sum_primes_threaded(data_reader: DataReader, num_workers: int = 4, chunk_size: int = 4096) -> int:
+    """Read, process, and sum primes using threads."""
+    total_sum = 0
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = lost()
-        chunk_size = 4096  # Adjust chunk size as needed
-
+        futures = []
         data_iter = data_reader.read()
 
         while True:
-            chunk = list(islice(data_iter, chunk_size)) # use islice so that we can read from generator in chunks
+            chunk = list(islice(data_iter, chunk_size))
             if not chunk:
                 break
             futures.append(executor.submit(process_chunk, chunk))
 
-        total_sum = 0
         for future in as_completed(futures):
             total_sum += sum(future.result())
-        return total_sum
-        
+
+    return total_sum
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Sum primes from input data.")
+    parser.add_argument("path", help="Path to the input file.")
+    return parser.parse_args()
+
+
 def main():
-    """Main function to process data and print the results."""
     args = parse_args()
-    file_data_reader = FileDataReader(args.path) 
-    result = sum_primes_threaded(file_data_reader)
+    reader = FileDataReader(args.path)
+    result = sum_primes_threaded(reader)
     print(f"Final Result: {result}")
+
 
 if __name__ == "__main__":
     main()
-
