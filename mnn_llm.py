@@ -379,7 +379,7 @@ def main() -> None:
             gen_tokens = tokenizer.encode(reply, add_special_tokens=False)
             tps = (len(gen_tokens) / dt) if dt > 0 else float("inf")
 
-            print(f"\n🤖 Assistant ({dt:.2f}s, {tps:.2f} tok/s):")
+            print(f"\n[{now_s()}] 🤖 Assistant ({dt:.2f}s, {tps:.2f} tok/s):")
             print(reply)
             print("-" * 60)
 
