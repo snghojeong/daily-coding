@@ -92,6 +92,7 @@ def sum_primes_threaded(data_reader: DataReader, num_workers: int = 4, chunk_siz
 def parse_args():
     parser = argparse.ArgumentParser(description="Sum primes from input data.")
     parser.add_argument("path", help="Path to the input file.")
+    parser.add_argument("threads", help="The number of worker threads.")
     return parser.parse_args()
 
 
