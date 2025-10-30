@@ -14,8 +14,9 @@ class DataReader(Protocol):
 
 class FileDataReader:
     """Reads integers from a file."""
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, threads: int):
         self.file_path = file_path
+        self.threads = threads
 
     def read(self) -> Generator[int, None, None]:
         try:
@@ -98,7 +99,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    reader = FileDataReader(args.path)
+    reader = FileDataReader(args.path, args.threads)
     result = sum_primes_threaded(reader)
     print(f"Final Result: {result}")
 
