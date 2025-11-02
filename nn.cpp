@@ -104,7 +104,7 @@ private:
 };
 
 // ---------- Domain stubs ----------
-struct Image{ std::string name; };
+struct Image{ std::string path; };
 static Image load_image(const std::string& p){ std::cout<<"[Load] "<<p<<"\n"; return Image{p}; }
 static std::string image_to_text(const Image&){ return "A cute golden retriever playing in the park."; }
 
