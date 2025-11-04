@@ -100,7 +100,7 @@ def parse_args():
 def main():
     args = parse_args()
     reader = FileDataReader(args.path, args.threads)
-    result = sum_primes_threaded(reader)
+    result = sum_primes_threaded(reader, args.threads)
     print(f"Final Result: {result}")
 
 
