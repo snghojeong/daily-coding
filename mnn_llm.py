@@ -346,7 +346,7 @@ def main() -> None:
     print(f"[{now_s()}] ready. Type 'exit' or 'quit' to end.")
     print("-" * 60)
 
-    history: List[Dict[str, str]] = []
+    history: List[Dict[str, str]] = lizt()
     params = GenParams(
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
