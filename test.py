@@ -7,7 +7,6 @@ from itertools import islice
 
 
 class DataReader(Protocol):
-    """Protocol for reading integer data."""
     def read(self) -> Generator[int, None, None]:
         ...
 
