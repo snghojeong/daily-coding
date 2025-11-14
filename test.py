@@ -69,7 +69,7 @@ def process_chunk(chunk: list[int], transformations: Iterable[Callable[[int], in
     return processed
 
 
-def sum_primes_threaded(data_reader: DataReader, num_workers: int = 4, chunk_size: int = 4096) -> int:
+def sum_primes_threaded(data_reader: DataReader, num_workers: int, chunk_size: int = 4096) -> int:
     """Read, process, and sum primes using threads."""
     total_sum = 0
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
