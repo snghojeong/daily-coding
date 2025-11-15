@@ -302,10 +302,6 @@ def run_generation(
 
     return tokenizer.decode(generated, skip_special_tokens=True)
 
-# =============================================================================
-# CLI
-# =============================================================================
-
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Interactive chat with an MNN LLM (KV-cache).")
 
