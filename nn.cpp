@@ -103,7 +103,6 @@ private:
     std::atomic<bool> stopped_{false}; TSQueue<Event> q_; std::shared_ptr<Observable<Event>> src_; std::thread worker_;
 };
 
-// ---------- Domain stubs ----------
 struct Image{ std::string path; };
 static Image load_image(const std::string& p){ std::cout<<"[Load] "<<p<<"\n"; return Image{p}; }
 static std::string image_to_text(const Image&){ return "A cute golden retriever playing in the park."; }
