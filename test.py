@@ -12,7 +12,6 @@ class DataReader(Protocol):
 
 
 class FileDataReader:
-    """Reads integers from a file."""
     def __init__(self, file_path: str):
         self.file_path = file_path
 
@@ -34,7 +33,6 @@ class FileDataReader:
 
 
 class StringDataReader:
-    """Reads integers from a semicolon-separated string."""
     def __init__(self, data_string: str):
         self.data_string = data_string
 
@@ -49,8 +47,7 @@ class StringDataReader:
                 print(f"Warning: Invalid number: {part}")
 
 
-def is_prime(n: int) -> bool:
-    """Check if n is prime."""
+def is_prime(n: int) -> bool:\
     if n <= 1:
         return False
     if n % 2 == 0:
@@ -60,7 +57,6 @@ def is_prime(n: int) -> bool:
 
 
 def process_chunk(chunk: list[int], transformations: Iterable[Callable[[int], int]] = (lambda x: x * x,)) -> list[int]:
-    """Apply transformations and keep primes."""
     processed = []
     for num in chunk:
         val = reduce(lambda acc, f: f(acc), transformations, num)
@@ -70,7 +66,6 @@ def process_chunk(chunk: list[int], transformations: Iterable[Callable[[int], in
 
 
 def sum_primes_threaded(data_reader: DataReader, num_workers: int, chunk_size: int = 4096) -> int:
-    """Read, process, and sum primes using threads."""
     total_sum = 0
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = []
