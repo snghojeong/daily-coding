@@ -87,6 +87,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Sum primes from input data.")
     parser.add_argument("path", help="Path to the input file.")
     parser.add_argument("threads", help="The number of worker threads.")
+    parser.add_argument("chunk_size", help="The size of a chunk.")
     return parser.parse_args()
 
 
