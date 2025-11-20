@@ -65,7 +65,7 @@ def process_chunk(chunk: list[int], transformations: Iterable[Callable[[int], in
     return processed
 
 
-def sum_primes_threaded(data_reader: DataReader, num_workers: int, chunk_size: int = 4096) -> int:
+def sum_primes_threaded(data_reader: DataReader, num_workers: int, chunk_size: int) -> int:
     total_sum = 0
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = []
@@ -94,7 +94,7 @@ def parse_args():
 def main():
     args = parse_args()
     reader = FileDataReader(args.path)
-    result = sum_primes_threaded(reader, args.threads)
+    result = sum_primes_threaded(reader, args.threads, args.chunk_size)
     print(f"Final Result: {result}")
 
 
