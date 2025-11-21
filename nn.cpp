@@ -123,11 +123,11 @@ struct Command{
 // ---------- Demo producer ----------
 static void simulate_input(ReactiveBus& bus){
     using namespace std::chrono_literals;
-    std::this_thread::sleep_for(100ms); bus.on_next({"load dog.jpg"});
-    std::this_thread::sleep_for(50ms);  bus.on_next({"describe"});
-    std::this_thread::sleep_for(50ms);  bus.on_next({"load cat.png"});
-    std::this_thread::sleep_for(20ms);  bus.on_next({"describe"});
-    std::this_thread::sleep_for(20ms);  bus.on_next({"quit"});
+    std::this_thread::sleep_for(1000ms); bus.on_next({"load dog.jpg"});
+    std::this_thread::sleep_for(500ms);  bus.on_next({"describe"});
+    std::this_thread::sleep_for(500ms);  bus.on_next({"load cat.png"});
+    std::this_thread::sleep_for(200ms);  bus.on_next({"describe"});
+    std::this_thread::sleep_for(200ms);  bus.on_next({"quit"});
 }
 
 int main(){
