@@ -26,7 +26,6 @@ def apply_chat_template(
     user_text: str,
     chat_history: Optional[List[Dict[str, str]]] = None,
 ) -> str:
-    """Apply HF chat template; fall back to simple role-tagged prompt."""
     messages = list(chat_history or [])
     messages.append({"role": "user", "content": user_text})
     try:
