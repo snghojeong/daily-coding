@@ -88,6 +88,7 @@ def parse_args():
     parser.add_argument("path", help="Path to the input file.")
     parser.add_argument("threads", help="The number of worker threads.")
     parser.add_argument("chunk_size", help="The size of a chunk.")
+    parser.add_argument("debug", help="Print debug message.")
     return parser.parse_args()
 
 
