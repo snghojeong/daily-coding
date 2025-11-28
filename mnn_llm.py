@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from threading import Event, Thread
 from typing import Dict, Iterable, List, Optional, Tuple
 
-# Suppress tokenizer parallelism warning (set before import)
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import numpy as np
