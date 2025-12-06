@@ -130,7 +130,7 @@ static void simulate_input(ReactiveBus& bus){
 }
 
 int main(){
-    ReactiveBus bus(64); Image cur; std::atomic<bool> exit{false};
+    ReactiveBus bus(128); Image cur; std::atomic<bool> exit{false};
     auto commands = bus.observable()
         ->map<std::string>([](auto& e){return e.text;})
         ->throttle(std::chrono::milliseconds(20))
