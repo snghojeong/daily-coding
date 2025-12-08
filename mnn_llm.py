@@ -13,10 +13,6 @@ import numpy as np
 import MNN
 from transformers import AutoTokenizer
 
-# =============================================================================
-# Utilities
-# =============================================================================
-
 def now_s() -> str:
     return time.strftime("%H:%M:%S")
 
