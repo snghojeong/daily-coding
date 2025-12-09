@@ -19,8 +19,6 @@ class FileDataReader:
         try:
             with open(self.file_path, 'rt') as file:
                 for line in file:
-                    # Use .isnumeric() or a similar check before stripping and converting
-                    # for cleaner data validation, but sticking to simple modifications:
                     line = line.strip()
                     if not line:
                         continue
