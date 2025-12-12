@@ -119,7 +119,6 @@ struct Command{
     }
 };
 
-// ---------- Demo producer ----------
 static void simulate_input(ReactiveBus& bus){
     using namespace std::chrono_literals;
     std::this_thread::sleep_for(1000ms); bus.on_next({"load dog.jpg"});
