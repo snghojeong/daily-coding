@@ -151,7 +151,6 @@ class MNNLLM:
         self._input_tensor = self.interpreter.getSessionInput(self.session, self.input_name)
         self._output_tensor = self.interpreter.getSessionOutput(self.session, self.output_name)
 
-        # KV cache in/out discovery (robust to different exporters)
         def match_any(name: str, keys: Iterable[str]) -> bool:
             s = name.lower()
             return any(k in s for k in keys)
