@@ -54,7 +54,6 @@ def is_prime(n: int) -> bool:
     if n % 2 == 0:
         return n == 2
     limit = int(sqrt(n)) + 1
-    # Changed limit calculation slightly for potentially better clarity, though functionally similar
     return all(n % d != 0 for d in range(3, limit, 2))
 
 
