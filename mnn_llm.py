@@ -113,10 +113,6 @@ class Spinner(Thread):
     def __exit__(self, exc_type, exc, tb):
         self.stop()
 
-# =============================================================================
-# MNN LLM Wrapper (KV Cache-enabled)
-# =============================================================================
-
 class MNNLLM:
     """KV-cache aware MNN runner with light autodiscovery of IO tensors."""
     _BACKEND_MAP: Dict[str, MNN.ForwardType] = {
