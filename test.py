@@ -109,7 +109,6 @@ def main():
     # Check for threads/chunk_size validity (e.g., must be positive) is recommended,
     # but not implemented for simplicity.
     reader = FileDataReader(args.path)
-    # The 'debug' variable is available as args.debug (a boolean).
     result = sum_primes_threaded(reader, args.threads, args.chunk_size)
     print(f"Final Result: **{result}**")
 
