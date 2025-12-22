@@ -16,7 +16,7 @@
 template<class T>
 class TSQueue {
 public:
-    explicit TSQueue(std::size_t cap=64) : cap_(cap) {}
+    explicit TSQueue(std::size_t cap=32) : cap_(cap) {}
     void push(T v){
         std::unique_lock<std::mutex> lk(mu_);
         cv_not_full_.wait(lk,[&]{return closed_||q_.size()<cap_;});
