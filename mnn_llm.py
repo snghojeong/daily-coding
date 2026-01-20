@@ -270,7 +270,6 @@ def run_generation(
         sys.stdout.write(tokenizer.decode([next_id], skip_special_tokens=True))
         sys.stdout.flush()
 
-    # Decode loop
     for _ in range(params.max_new_tokens - 1):
         if next_id in stop_ids:
             break
