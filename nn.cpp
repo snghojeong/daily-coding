@@ -132,7 +132,7 @@ int main(){
     ReactiveBus bus(128); Image cur; std::atomic<bool> exit{false};
     auto commands = bus.observable()
         ->map<std::string>([](auto& e){return e.text;})
-        ->throttle(std::chrono::milliseconds(20))
+        ->throttle(std::chrono::milliseconds(10))
         ->map<Command>([](const std::string& s){return Command::parse(s);});
 
     auto un1 = commands->filter([](auto& c){return c.type==CmdType::Load;})
