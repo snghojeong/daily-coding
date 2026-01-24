@@ -46,7 +46,6 @@ def sample_token(
     top_k: int,
     rng: np.random.Generator,
 ) -> int:
-    """Temperature, then top-k, then top-p (nucleus). Greedy when temp<=0."""
     if not np.all(np.isfinite(logits)):
         # Fallback to greedy on bad logits
         return int(np.nanargmax(logits))
