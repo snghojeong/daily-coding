@@ -108,7 +108,7 @@ def main():
     args = parse_args()
     reader = FileDataReader(args.path)
     result = sum_primes_threaded(reader, args.threads, args.chunk_size)
-    print(f"Final Result: **{result}**")
+    print(f"Final Result: {result}")
 
 
 if __name__ == "__main__":
