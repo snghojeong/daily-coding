@@ -1,115 +1,68 @@
 import argparse
-from functools import reduce
-from math import sqrt
-from typing import Callable, Iterable, Generator, Protocol, Optional # Added Optional for clarity in DataReader return type
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from itertools import islice
+from math import isqrt
 
-
-class DataReader(Protocol):
-    def read(self) -> Generator[int, None, None]:
-        ...
-
-
-class FileDataReader:
-    def __init__(self, file_path: str):
-        self.file_path = file_path
-
-    def read(self) -> Generator[int, None, None]:
-        try:
-            with open(self.file_path, 'rt') as file:
-                for line in file:
-                    line = line.strip()
-                    if not line:
-                        continue
+def get_numbers_from_file(file_path: str):
+    """Generates integers from a file, skipping invalid lines."""
+    try:
+        with open(file_path, 'rt') as file:
+            for line in file:
+                if stripped := line.strip():
                     try:
-                        yield int(line)
+                        yield int(stripped)
                     except ValueError:
-                        print(f"Warning: Invalid number in line: **{line}**") # Bolding for emphasis
-        except FileNotFoundError:
-            # Raising an error is often better than just printing, but keeping it simple
-            print(f"Error: File not found: **{self.file_path}**")
-        except Exception as e:
-            print(f"Error reading file: **{e}**")
-
-
-class StringDataReader:
-    def __init__(self, data_string: str):
-        self.data_string = data_string
-
-    def read(self) -> Generator[int, None, None]:
-        for part in self.data_string.split(';'):
-            part = part.strip()
-            if not part:
-                continue
-            try:
-                yield int(part)
-            except ValueError:
-                print(f"Warning: Invalid number: **{part}**")
-
+                        print(f"Warning: Invalid number: {stripped}")
+    except FileNotFoundError:
+        print(f"Error: File not found: {file_path}")
 
 def is_prime(n: int) -> bool:
-    if n <= 1:
-        return False
-    if n % 2 == 0:
-        return n == 2
-    limit = int(sqrt(n)) + 1
-    return all(n % d != 0 for d in range(3, limit, 2))
+    """Efficiently checks if a number is prime."""
+    if n < 2: return False
+    if n == 2 or n == 3: return True
+    if n % 2 == 0 or n % 3 == 0: return False
+    # Check divisors up to sqrt(n)
+    for i in range(5, isqrt(n) + 1, 6):
+        if n % i == 0 or n % (i + 2) == 0:
+            return False
+    return True
 
+def process_chunk(chunk: list[int]) -> int:
+    """Transforms numbers and returns the sum of those that are prime."""
+    # Applying the transformation (x*x) and filtering for primes in one pass
+    transformed = (x * x for x in chunk)
+    return sum(val for val in transformed if is_prime(val))
 
-def process_chunk(chunk: list[int], transformations: Iterable[Callable[[int], int]] = (lambda x: x * x,)) -> list[int]:
-    processed = []
-    # Using a list comprehension for the transformation part is often more Pythonic
-    for num in chunk:
-        val = reduce(lambda acc, f: f(acc), transformations, num)
-        if is_prime(val):
-            processed.append(val)
-    return processed
-
-
-def sum_primes_threaded(data_reader: DataReader, num_workers: int, chunk_size: int) -> int:
+def sum_primes_parallel(numbers_iter, num_workers: int, chunk_size: int) -> int:
+    """Distributes chunks to a thread pool and aggregates results."""
     total_sum = 0
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = []
-        data_iter = data_reader.read()
+        # Create a generator of futures to save memory
+        def chunk_generator():
+            while True:
+                chunk = list(islice(numbers_iter, chunk_size))
+                if not chunk:
+                    break
+                yield executor.submit(process_chunk, chunk)
 
-        while True:
-            chunk = list(islice(data_iter, chunk_size))
-            if not chunk:
-                break
-            futures.append(executor.submit(process_chunk, chunk))
-
-        for future in as_completed(futures):
-            # Added a try-except block to handle potential exceptions in worker threads,
-            # though not strictly required by the prompt, it's a good practice.
+        for future in chunk_generator():
             try:
-                total_sum += sum(future.result())
-            except Exception as exc:
-                print(f'Chunk processing generated an exception: {exc}')
-
+                total_sum += future.result()
+            except Exception as e:
+                print(f"Chunk failed: {e}")
+    
     return total_sum
 
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Sum primes from input data.")
-    parser.add_argument("path", help="Path to the input file.")
-    # --- START OF KEY MODIFICATIONS ---
-    # 1. Added 'type=int' for numerical arguments. They are read as strings by default.
-    parser.add_argument("threads", type=int, help="The number of worker threads.")
-    parser.add_argument("chunk_size", type=int, help="The size of a chunk.")
-    # 2. Changed 'debug' to a store_true action for a proper boolean flag.
-    #    This means you use --debug (or simply 'debug' if you want it positional) without an argument.
-    parser.add_argument("--debug", action="store_true", help="Print debug message.")
-    # --- END OF KEY MODIFICATIONS ---
-    return parser.parse_args()
-
-
 def main():
-    args = parse_args()
-    reader = FileDataReader(args.path)
-    result = sum_primes_threaded(reader, args.threads, args.chunk_size)
-    print(f"Final Result: {result}")
+    parser = argparse.ArgumentParser(description="Sum squares of primes from a file.")
+    parser.add_argument("path", help="Path to input file")
+    parser.add_argument("threads", type=int, help="Number of threads")
+    parser.add_argument("chunk_size", type=int, help="Chunk size")
+    args = parser.parse_args()
 
+    numbers = get_numbers_from_file(args.path)
+    result = sum_primes_parallel(numbers, args.threads, args.chunk_size)
+    print(f"Final Result: {result}")
 
 if __name__ == "__main__":
     main()
