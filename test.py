@@ -4,7 +4,6 @@ from itertools import islice
 from math import isqrt
 
 def get_numbers_from_file(file_path: str):
-    """Generates integers from a file, skipping invalid lines."""
     try:
         with open(file_path, 'rt') as file:
             for line in file:
