@@ -15,8 +15,6 @@
 
 using namespace std::chrono_literals;
 
-// --- Utilities ---
-
 template<typename T>
 class TSQueue {
 public:
