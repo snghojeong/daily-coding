@@ -198,7 +198,7 @@ def main():
             history.append({"role": "assistant", "content": response})
             
     except KeyboardInterrupt:
-        print("\nExiting...")
+        print("\nExit.")
 
 if __name__ == "__main__":
     main()
