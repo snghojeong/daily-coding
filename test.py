@@ -1,67 +1,105 @@
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from itertools import islice
 from math import isqrt
+from typing import Iterable, Iterator, List
 
-def get_numbers_from_file(file_path: str):
+log = logging.getLogger(__name__)
+
+
+def read_ints(path: str) -> Iterator[int]:
+    """Yield ints from a text file, skipping blanks and warning on bad lines."""
     try:
-        with open(file_path, 'rt') as file:
-            for line in file:
-                if stripped := line.strip():
-                    try:
-                        yield int(stripped)
-                    except ValueError:
-                        print(f"Warning: Invalid number: {stripped}")
+        with open(path, "rt", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if not s:
+                    continue
+                try:
+                    yield int(s)
+                except ValueError:
+                    log.warning("Invalid number: %r", s)
     except FileNotFoundError:
-        print(f"Error: File not found: {file_path}")
+        log.error("File not found: %s", path)
+
 
 def is_prime(n: int) -> bool:
-    """Efficiently checks if a number is prime."""
-    if n < 2: return False
-    if n == 2 or n == 3: return True
-    if n % 2 == 0 or n % 3 == 0: return False
-    # Check divisors up to sqrt(n)
-    for i in range(5, isqrt(n) + 1, 6):
-        if n % i == 0 or n % (i + 2) == 0:
+    if n < 2:
+        return False
+    if n % 2 == 0:
+        return n == 2
+    if n % 3 == 0:
+        return n == 3
+
+    limit = isqrt(n)
+    d = 5
+    while d <= limit:
+        if n % d == 0 or n % (d + 2) == 0:
             return False
+        d += 6
     return True
 
-def process_chunk(chunk: list[int]) -> int:
-    """Transforms numbers and returns the sum of those that are prime."""
-    # Applying the transformation (x*x) and filtering for primes in one pass
-    transformed = (x * x for x in chunk)
-    return sum(val for val in transformed if is_prime(val))
 
-def sum_primes_parallel(numbers_iter, num_workers: int, chunk_size: int) -> int:
-    """Distributes chunks to a thread pool and aggregates results."""
-    total_sum = 0
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        # Create a generator of futures to save memory
-        def chunk_generator():
-            while True:
-                chunk = list(islice(numbers_iter, chunk_size))
-                if not chunk:
-                    break
-                yield executor.submit(process_chunk, chunk)
+def chunked(it: Iterable[int], size: int) -> Iterator[List[int]]:
+    """Yield lists of up to `size` items from an iterable."""
+    if size <= 0:
+        raise ValueError("chunk size must be > 0")
 
-        for future in chunk_generator():
+    it = iter(it)
+    return iter(lambda: list(islice(it, size)), [])
+
+
+def sum_prime_squares(nums: List[int]) -> int:
+    """Sum x^2 for x in nums where x^2 is prime (same logic as original)."""
+    total = 0
+    for x in nums:
+        sq = x * x
+        if is_prime(sq):
+            total += sq
+    return total
+
+
+def sum_primes_parallel(numbers: Iterable[int], workers: int, chunk_size: int) -> int:
+    if workers <= 0:
+        raise ValueError("workers must be > 0")
+
+    total = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(sum_prime_squares, c) for c in chunked(numbers, chunk_size)]
+        for fut in as_completed(futures):
             try:
-                total_sum += future.result()
-            except Exception as e:
-                print(f"Chunk failed: {e}")
-    
-    return total_sum
+                total += fut.result()
+            except Exception:
+                log.exception("Chunk failed")
+    return total
 
-def main():
-    parser = argparse.ArgumentParser(description="Sum squares of primes from a file.")
-    parser.add_argument("path", help="Path to input file")
-    parser.add_argument("threads", type=int, help="Number of threads")
-    parser.add_argument("chunk_size", type=int, help="Chunk size")
-    args = parser.parse_args()
 
-    numbers = get_numbers_from_file(args.path)
+@dataclass(frozen=True)
+class Args:
+    path: str
+    threads: int
+    chunk_size: int
+
+
+def parse_args() -> Args:
+    p = argparse.ArgumentParser(description="Sum squares of primes from a file.")
+    p.add_argument("path", help="Path to input file")
+    p.add_argument("threads", type=int, help="Number of threads")
+    p.add_argument("chunk_size", type=int, help="Chunk size")
+    ns = p.parse_args()
+    return Args(ns.path, ns.threads, ns.chunk_size)
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    args = parse_args()
+
+    numbers = read_ints(args.path)
     result = sum_primes_parallel(numbers, args.threads, args.chunk_size)
     print(f"Final Result: {result}")
+
 
 if __name__ == "__main__":
     main()
