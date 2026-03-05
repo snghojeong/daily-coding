@@ -10,7 +10,6 @@ log = logging.getLogger(__name__)
 
 
 def read_ints(path: str) -> Iterator[int]:
-    """Yield ints from a text file, skipping blanks and warning on bad lines."""
     try:
         with open(path, "rt", encoding="utf-8") as f:
             for line in f:
