@@ -51,8 +51,6 @@ private:
     bool closed_{false};
 };
 
-// --- Reactive Core ---
-
 template<typename T>
 class Observable : public std::enable_shared_from_this<Observable<T>> {
 public:
