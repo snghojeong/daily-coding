@@ -25,7 +25,6 @@ def apply_chat_template(tokenizer, user_text: str, history: List[Dict[str, str]]
         return "\n".join(f"{m['role']}: {m['content']}" for m in messages)
 
 def sample_token(logits: np.ndarray, params: 'GenParams', rng: np.random.Generator) -> int:
-    """Sample a token using Temperature, Top-K, and Top-P filtering."""
     if params.temperature <= 0:
         return int(np.argmax(logits))
 
