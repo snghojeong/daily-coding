@@ -12,6 +12,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <future>
 
 using namespace std::chrono_literals;
 
@@ -57,6 +58,12 @@ public:
     using Callback = std::function<void(const T&)>;
     using Unsubscribe = std::function<void()>;
 
+    // Destructor ensures that if this observable was created via map/filter,
+    // it unregisters itself from its parent when it dies.
+    ~Observable() {
+        if (lifetime_token_) lifetime_token_();
+    }
+
     Unsubscribe subscribe(Callback cb) {
         std::lock_guard lk(mu_);
         auto id = next_id_++;
@@ -78,11 +85,13 @@ public:
         for (auto& cb : active_subs) cb(v);
     }
 
-    // High-order operators
+    // --- High-order operators with Lifetime Management ---
+
     template<typename U>
     auto map(std::function<U(const T&)> f) {
         auto out = std::make_shared<Observable<U>>();
-        subscribe([w = std::weak_ptr(out), f](const T& v) {
+        // The child 'out' stores the unsubscription function for the parent.
+        out->lifetime_token_ = this->subscribe([w = std::weak_ptr(out), f](const T& v) {
             if (auto s = w.lock()) s->emit(f(v));
         });
         return out;
@@ -90,8 +99,10 @@ public:
 
     auto filter(std::function<bool(const T&)> p) {
         auto out = std::make_shared<Observable<T>>();
-        subscribe([w = std::weak_ptr(out), p](const T& v) {
-            if (p(v)) if (auto s = w.lock()) s->emit(v);
+        out->lifetime_token_ = this->subscribe([w = std::weak_ptr(out), p](const T& v) {
+            if (p(v)) {
+                if (auto s = w.lock()) s->emit(v);
+            }
         });
         return out;
     }
@@ -100,6 +111,7 @@ private:
     std::mutex mu_;
     std::unordered_map<std::size_t, Callback> subs_;
     std::size_t next_id_{0};
+    Unsubscribe lifetime_token_; // Holds the "tether" to the parent observable
 };
 
 // --- Domain Models ---
@@ -129,7 +141,8 @@ public:
     ReactiveBus() : src_(std::make_shared<Observable<std::string>>()) {
         worker_ = std::jthread([this](std::stop_token st) {
             while (!st.stop_requested()) {
-                if (auto msg = q_.pop()) src_->emit(*msg);
+                auto msg = q_.pop();
+                if (msg) src_->emit(*msg);
                 else break;
             }
         });
@@ -150,6 +163,8 @@ private:
 int main() {
     ReactiveBus bus;
     std::string current_image_path;
+    
+    // Using a vector of Unsubscribe tokens to manage listener lifetimes
     std::vector<Observable<Command>::Unsubscribe> tokens;
 
     // Build Pipeline: String -> Command
@@ -179,7 +194,6 @@ int main() {
         }
     });
 
-    // Use a simple blocking mechanism for the "Quit" event
     std::promise<void> exit_signal;
     auto exit_future = exit_signal.get_future();
 
@@ -189,7 +203,7 @@ int main() {
             exit_signal.set_value(); 
         }));
 
-    exit_future.wait(); // Wait for the "quit" command to process
+    exit_future.wait(); 
     bus.stop();
 
     return 0;
